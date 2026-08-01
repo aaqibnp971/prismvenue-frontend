@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/session.dart';
 import '../../data/models/user.dart';
-import '../../main.dart';
+import '../../app/theme_mode.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
 import 'account_menu.dart';

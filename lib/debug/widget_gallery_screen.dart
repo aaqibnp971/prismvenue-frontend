@@ -4,7 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../app/roles.dart';
 import '../data/models/schedule_entry.dart';
 import '../data/models/user.dart';
-import '../main.dart';
+import '../theme/theme.dart';
 import '../shared/widgets/account_menu.dart';
 import '../shared/widgets/confirm_dialog.dart';
 import '../shared/widgets/day_chips.dart';

@@ -9,7 +9,7 @@ import '../../app/venue_header.dart';
 import '../../data/models/guardrails.dart';
 import '../../data/repositories/settings_repo.dart';
 import '../../data/repositories/venue_repo.dart';
-import '../../main.dart';
+import '../../app/theme_mode.dart';
 import '../../shared/widgets/prism_dropdown_menu.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/settings_row.dart';
