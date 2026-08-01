@@ -13,10 +13,12 @@
 ///
 /// ## The gap on mood change, stated honestly
 ///
-/// `prism_load_scene` is rejected after `prism_start` — scenes are loaded once,
-/// with all decoding done up front so the render path never touches disk. So a
-/// mood change here is stop → load → start, which costs a short silence while
-/// the new stems decode.
+/// A scene belongs to a handle for that handle's whole life. `prism_load_scene`
+/// is rejected once a scene is loaded — not just after `prism_start`, and
+/// `prism_stop` does not clear it (`core/src/prism_core.cpp:277, :305`) — so
+/// there is no reload-in-place. A mood change therefore retires the handle and
+/// builds a fresh one, which costs a short silence while the new stems decode.
+/// The decoding is all up front by design, so the render path never touches disk.
 ///
 /// The engine's own spec describes scene changes as equal-power crossfades
 /// scheduled at loop boundaries, which is what the app's Seamless / Gentle /
@@ -63,6 +65,13 @@ class PlatformPrismEngine implements PrismEngine {
   String? _currentMood;
   bool _silenced = false;
 
+  /// Mirrors the core's device state. `prism_device_start` returns
+  /// INVALID_STATE when the device is already running, and the controller
+  /// legitimately reaches resume() straight after setMood() has already
+  /// started it — so the app tracks this rather than letting a benign
+  /// double-start mark the whole engine failed.
+  bool _deviceRunning = false;
+
   EngineStatus _status = EngineStatus.idle;
   String? _lastError;
   final _statusController = StreamController<EngineStatus>.broadcast();
@@ -105,13 +114,11 @@ class PlatformPrismEngine implements PrismEngine {
 
   @override
   Future<void> start() => _serialise('start', () async {
-        if (_core != null) return;
+        if (_sceneDir != null) return;
         _setStatus(EngineStatus.starting);
-        _sceneDir ??= await _extractScenes();
-        _core = PrismCore.create(vertical: PrismVertical.venues);
-        // No scene yet: the first setMood loads one. Starting without a scene
-        // would be rejected by the ABI, and there is no sensible default —
-        // the room's mood comes from the backend.
+        _sceneDir = await _extractScenes();
+        // No core yet: the first setMood builds one around its scene. Creating
+        // one here would only have to be torn down again — see setMood.
       });
 
   @override
@@ -129,30 +136,72 @@ class PlatformPrismEngine implements PrismEngine {
           return;
         }
 
-        final core = _core;
-        if (core == null) return; // start() not called or it failed
+        final sceneDir = _sceneDir;
+        if (sceneDir == null) return; // start() not called, or it failed
 
-        // Scenes load once per engine lifetime, so a mood change is a full
-        // reload. See the library doc for why this gap exists.
-        core.deviceStop();
-        core.stop();
-        core.loadScene('${_sceneDir!.path}/$manifest');
-        core.start();
-        core.setMoodOverride(mood);
+        // A scene is bound to a handle for that handle's lifetime: the ABI
+        // rejects prism_load_scene once one is loaded, and prism_stop does not
+        // clear that (core/src/prism_core.cpp:277, :305). So a mood change
+        // retires the handle and builds a fresh one around the new scene.
+        //
+        // Reloading in place — deviceStop/stop/loadScene/start — looks cheaper
+        // and was what this did, but the ABI returns INVALID_STATE on the
+        // load, leaving the old scene loaded and still startable. The room
+        // then keeps playing the PREVIOUS mood while the dashboard shows the
+        // new one, which is exactly the disagreement the engine seam exists to
+        // prevent. Cost is the same either way: both stop the audio and decode
+        // the new stems before it comes back.
+        _teardownCore();
+
+        final next = PrismCore.create(vertical: PrismVertical.venues);
+        try {
+          next.loadScene('${sceneDir.path}/$manifest');
+          next.start();
+          next.setMoodOverride(mood);
+        } catch (_) {
+          next.dispose(); // never leak a half-built handle
+          rethrow;
+        }
+        _core = next;
         _currentMood = moodId;
 
         if (_silenced) {
           _setStatus(EngineStatus.silenced);
         } else {
-          core.deviceStart();
+          _deviceStart(next);
           _setStatus(EngineStatus.playing);
         }
       });
 
+  /// Stops and destroys the current handle, if any, leaving the engine with no
+  /// core. Safe to call repeatedly.
+  void _teardownCore() {
+    final core = _core;
+    if (core == null) return;
+    _core = null;
+    _currentMood = null;
+    _deviceStop(core);
+    core.stop();
+    core.dispose();
+  }
+
+  void _deviceStart(PrismCore core) {
+    if (_deviceRunning) return;
+    core.deviceStart();
+    _deviceRunning = true;
+  }
+
+  void _deviceStop(PrismCore core) {
+    if (!_deviceRunning) return;
+    core.deviceStop();
+    _deviceRunning = false;
+  }
+
   @override
   Future<void> silence() => _serialise('silence', () async {
         _silenced = true;
-        _core?.deviceStop();
+        final core = _core;
+        if (core != null) _deviceStop(core);
         _setStatus(EngineStatus.silenced);
       });
 
@@ -161,14 +210,13 @@ class PlatformPrismEngine implements PrismEngine {
         _silenced = false;
         final core = _core;
         if (core == null || _currentMood == null) return;
-        core.deviceStart();
+        _deviceStart(core);
         _setStatus(EngineStatus.playing);
       });
 
   @override
   Future<void> dispose() => _serialise('dispose', () async {
-        _core?.dispose();
-        _core = null;
+        _teardownCore();
         await _statusController.close();
       });
 

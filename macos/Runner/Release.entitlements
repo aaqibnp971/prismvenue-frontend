@@ -4,5 +4,8 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
+	<!-- Outbound HTTP to PRISM_API_BASE_URL; the App Sandbox denies it by default. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
 </dict>
 </plist>

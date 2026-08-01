@@ -43,3 +43,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local run configuration for --dart-define-from-file. Holds the API base URL,
+# which differs per developer/deployment. Never a secret — the app only ever
+# learns WHERE the API is, never how to authenticate to the database.
+prism.config.json
+
+# Backend credentials must never live in this repo.
+.env

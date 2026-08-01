@@ -8,5 +8,17 @@
 	<true/>
 	<key>com.apple.security.network.server</key>
 	<true/>
+	<!-- Outbound HTTP to PRISM_API_BASE_URL. network.server (stock scaffold, for the
+	     Dart VM service) grants nothing outbound, so without this every API call
+	     fails with "Operation not permitted" under the App Sandbox. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- NOTE: flutter_secure_storage stores the session token in the Keychain.
+	     A `keychain-access-groups` entitlement is deliberately NOT set here: it
+	     requires signing with a real development certificate, and the stock
+	     project uses ad-hoc signing, so adding it fails the build with
+	     "entitlements that require signing with a development certificate".
+	     The app's own keychain access works without it. If you set a
+	     DEVELOPMENT_TEAM for device builds, add the group then. -->
 </dict>
 </plist>
