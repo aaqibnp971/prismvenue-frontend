@@ -7,6 +7,78 @@ each item either follows a §6-A assumption (flagged) or is left unresolved.
 The README's own §6-B list (1–12) is not repeated here; this file only adds
 NEW items encountered during the build. Finalized in Phase 5.
 
+## Phase 5 — Drag-to-reschedule (S03-2)
+
+32. **The weekly grid was transposed, resolving item 17.** It had no time axis
+    at all: a block's y-position was its index in the repo list, so "drag it an
+    hour later" had nowhere to land. Building the axis was unavoidable. It runs
+    horizontally — seven day ROWS, hours left to right — because vertically,
+    sixteen open hours give ~32 pt/hour at 1024×768 and ~22 pt at the designed
+    860×602 frame, so a one-hour daypart (which the sheet happily creates)
+    would render at half the 44 pt minimum target. Horizontal gives ~59 pt/hour
+    and ~74 pt rows. This is a visible change to a specified frame, taken under
+    item 17's existing "S03 geometry is derived, not pinned".
+
+33. **Overlapping dayparts are drawn, not refused — and nobody has decided what
+    they mean.** A weekly plan is normally contiguous; the seeded one tiles
+    7–23 with no gaps. So a block can rarely move without touching a neighbour,
+    and a UI that refused overlap would be inert on exactly the shape real
+    schedules take. Neither the model, the repositories nor the backend
+    validates overlap, so refusing would also invent a constraint the system
+    does not have. The drag therefore commits and the conflict is shown. But
+    what actually plays when two dayparts both claim 3pm is undefined
+    everywhere — it needs a product answer, and possibly a boundary-drag
+    (resize) interaction rather than a move, which is the operation a
+    contiguous plan really wants.
+
+34. **Snap granularity is one hour because that is all the model can say.**
+    `startHour`/`endHour` are ints and the wire sends ints; finer snapping needs
+    the `start_local`/`end_local` columns. It also matches the hour dial the
+    sheet uses, so a drag can never produce a time the sheet cannot then edit.
+
+35. **First use of Semantics and haptics in the codebase.** Neither appeared
+    anywhere in `lib/` before this. Drag-and-drop is invisible to VoiceOver by
+    construction, so each block carries a label plus custom actions (move an
+    hour earlier/later, previous/next day) and the sheet remains the
+    full-capability path. Haptics mark arming, each hour crossing, and landing
+    on a conflict — on a block your finger is covering, it is the only channel
+    that is not occluded. Both are new API surface and should be reviewed
+    rather than assumed.
+
+## Phase 5 — Back to Auto (Floor)
+
+28. **Floor now carries a return-to-auto, and Venues does the same thing
+    without a confirm.** S01-3 exists because switching the vibe changes what
+    the room audibly plays and must not happen by mis-tap. Handing the room
+    back changes it just as much, so the Floor control confirms
+    ("Let Prism take it from here?"). But `venue_screen.dart` performs the
+    identical action from a zone row with no confirmation at all. One of the
+    two is wrong and the frames pin neither — flagging rather than silently
+    aligning them, since removing a confirm and adding one are both design
+    decisions.
+
+29. **The control is reachable by floor staff, who cannot reach Venues.**
+    Floor is all-roles (§2 S01) while `/venues` is manager+owner and the router
+    redirects floor staff away from it. So floor staff can already take the room
+    off schedule from the mood grid, but until now had no way to put it back —
+    only a manager could. Giving them the hand-back seems clearly right (an app
+    that lets someone break the schedule but not repair it is worse), but it is
+    a role-surface change and belongs beside item 16, not slipped in.
+
+30. **"Off schedule" needs a server field on `/zones/{id}/now`.** The flag is
+    parsed as `off_schedule`, defaulting to false when absent, so the control
+    simply never appears against a backend that does not send it. The data
+    exists: `zone_state.desired_mode` is `auto | manual | takeover | paused`,
+    and `desired_mode_before_pause` preserves `auto | manual` across a pause —
+    so the derivation is `desired_mode == 'manual'`, or, while paused,
+    `desired_mode_before_pause == 'manual'`. Needs adding to the endpoint.
+
+31. **No countdown is promised, deliberately.** The zone rows say "auto in
+    42 min", but that string is a hardcoded mock seed with no server source
+    (INTEGRATION_PLAN.md records `status_detail` as MISSING). The Floor pill
+    therefore states the fact only. If a real return-to-auto deadline is
+    intended, it needs a column before any UI can show one.
+
 ## Phase 4 — Polish
 
 27. **§6-A1/A2/A3 derivations** — portrait breakpoint chosen at 900px body
