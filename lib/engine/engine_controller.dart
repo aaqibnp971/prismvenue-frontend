@@ -19,9 +19,11 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/models/guardrails.dart';
 import '../data/models/playback_state.dart';
 import '../data/models/takeover_state.dart';
 import '../data/repositories/playback_repo.dart';
+import '../data/repositories/settings_repo.dart';
 import 'prism_engine.dart';
 
 /// The engine instance. Created once and disposed with the container.
@@ -85,7 +87,17 @@ class EngineController {
       await _engine.start();
     }
 
-    await _engine.setMood(state.moodId);
+    // How slowly the room eases between vibes is a venue setting (S05-3), so it is
+    // read here rather than baked into the engine. `read`, not `listen`: the value
+    // matters at the moment a mood changes, and a guardrails edit should not by
+    // itself retrigger a transition. The seed default covers the window before the
+    // first emission — the router relies on the same fallback.
+    final guardrails = _ref.read(guardrailsProvider).value ?? const Guardrails();
+    await _engine.setMood(
+      state.moodId,
+      transition: guardrails.transitionDuration,
+      alignToBar: guardrails.transitionAlignsToBar,
+    );
 
     // Pause is a silence with a different label. Takeover is handled separately
     // and wins — see _onTakeover.

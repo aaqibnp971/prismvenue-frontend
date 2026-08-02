@@ -11,28 +11,30 @@
 /// 2. **Mood means scene.** Each of the six moods has its own manifest with its
 ///    own stems, so switching mood means loading a different scene.
 ///
-/// ## The gap on mood change, stated honestly
+/// ## How a mood change reaches the speakers
 ///
-/// A scene belongs to a handle for that handle's whole life. `prism_load_scene`
-/// is rejected once a scene is loaded — not just after `prism_start`, and
-/// `prism_stop` does not clear it (`core/src/prism_core.cpp:277, :305`) — so
-/// there is no reload-in-place. A mood change therefore retires the handle and
-/// builds a fresh one, which costs a short silence while the new stems decode.
-/// The decoding is all up front by design, so the render path never touches disk.
+/// A scene is bound to a handle for that handle's whole life: `prism_load_scene`
+/// is rejected once a scene is loaded — not merely after `prism_start`, and
+/// `prism_stop` does not clear it. So there is no reload-in-place, and for a
+/// while the only way to reach another scene was to dispose the handle and build
+/// a new one. That is where the audible gap came from: the room went silent
+/// while the new stems decoded.
 ///
-/// The engine's own spec describes scene changes as equal-power crossfades
-/// scheduled at loop boundaries, which is what the app's Seamless / Gentle /
-/// Lively setting is meant to control. That needs the engine to hold more than
-/// one scene at a time, which it currently cannot (`Pgae` owns exactly one
-/// `SceneAssets`, and `mode_hint` does not select scenes yet). Until that lands,
-/// this is the honest behaviour, and the Seamless setting is not yet honoured.
+/// `prism_crossfade_scene` (ABI 0.3) is the door that fixes it. The engine holds
+/// BOTH scenes and equal-power fades between them at a loop boundary, so the
+/// room never drops out. Only the first mood of a session builds a handle; every
+/// one after it crossfades in place.
 ///
-/// The alternative — one shared scene for all six moods, switched purely by
-/// pinning the PSV — is seamless but much less distinct: measured on a single
-/// scene, the loudest and quietest moods land within ~2.6 dB, because most of
-/// the separation between the six comes from their different stem sets. Given
-/// the requirement is that the six must not sound alike, the brief gap is the
-/// better trade for now.
+/// The overlap length is the venue's Seamless / Gentle / Lively setting, passed
+/// down as [setMood]'s `transition`. Lively also turns off bar alignment: with
+/// 16-second loops the wait for a boundary can exceed the fade itself, which
+/// reads as the app ignoring the tap.
+///
+/// The alternative once considered — one shared scene for all six moods,
+/// switched purely by pinning the PSV — would also have been seamless, but much
+/// less distinct: measured on a single scene the loudest and quietest moods land
+/// within ~2.6 dB, because most of what separates the six is their different
+/// stem sets. Holding two scenes keeps both properties.
 library;
 
 import 'dart:async';
@@ -62,7 +64,14 @@ class PlatformPrismEngine implements PrismEngine {
   PrismCore? _core;
   Directory? _sceneDir;
 
+  /// What the engine is actually playing.
   String? _currentMood;
+
+  /// What the app most recently asked for. Differs from [_currentMood] only while a
+  /// change is queued or waiting out a transition; a queued request that no longer
+  /// matches this has been superseded and is dropped.
+  String? _desiredMood;
+
   bool _silenced = false;
 
   /// Mirrors the core's device state. `prism_device_start` returns
@@ -122,7 +131,17 @@ class PlatformPrismEngine implements PrismEngine {
       });
 
   @override
-  Future<void> setMood(String moodId) => _serialise('setMood($moodId)', () async {
+  Future<void> setMood(String moodId, {Duration? transition, bool? alignToBar}) {
+    // Recorded OUTSIDE the queue, so it is already true when a later tap is queued
+    // behind an earlier one. Everything below treats it as the single answer to
+    // "what should the room be playing?".
+    _desiredMood = moodId;
+    return _serialise('setMood($moodId)', () async {
+        // Superseded while queued — a manager tapped twice and only the last one
+        // is still wanted. Applying this would put the room on a mood the
+        // dashboard has already moved past.
+        if (_desiredMood != moodId) return;
+
         final manifest = _manifests[moodId];
         if (manifest == null) {
           debugPrint('prism engine: unknown mood "$moodId" ignored');
@@ -139,39 +158,72 @@ class PlatformPrismEngine implements PrismEngine {
         final sceneDir = _sceneDir;
         if (sceneDir == null) return; // start() not called, or it failed
 
-        // A scene is bound to a handle for that handle's lifetime: the ABI
-        // rejects prism_load_scene once one is loaded, and prism_stop does not
-        // clear that (core/src/prism_core.cpp:277, :305). So a mood change
-        // retires the handle and builds a fresh one around the new scene.
-        //
-        // Reloading in place — deviceStop/stop/loadScene/start — looks cheaper
-        // and was what this did, but the ABI returns INVALID_STATE on the
-        // load, leaving the old scene loaded and still startable. The room
-        // then keeps playing the PREVIOUS mood while the dashboard shows the
-        // new one, which is exactly the disagreement the engine seam exists to
-        // prevent. Cost is the same either way: both stop the audio and decode
-        // the new stems before it comes back.
-        _teardownCore();
+        final scenePath = '${sceneDir.path}/$manifest';
+        final core = _core;
 
-        final next = PrismCore.create(vertical: PrismVertical.venues);
-        try {
-          next.loadScene('${sceneDir.path}/$manifest');
-          next.start();
-          next.setMoodOverride(mood);
-        } catch (_) {
-          next.dispose(); // never leak a half-built handle
-          rethrow;
+        // The first mood of a session has nothing to fade from, so it builds the
+        // handle. Every mood after it crossfades in place.
+        if (core == null) {
+          _buildCore(scenePath, mood, moodId);
+          return;
         }
-        _core = next;
-        _currentMood = moodId;
 
-        if (_silenced) {
-          _setStatus(EngineStatus.silenced);
-        } else {
-          _deviceStart(next);
+        // Only one crossfade can run at a time, and a transition is long — up to
+        // 60 s on Seamless — so taps routinely arrive mid-fade. Wait for the one in
+        // flight rather than dropping this one: the engine refuses a second
+        // crossfade with BUSY, and simply logging that left the room on the old
+        // mood while the dashboard showed the new one. That disagreement between
+        // the speakers and the screen is the exact thing this seam exists to
+        // prevent, so it is worth the wait.
+        //
+        // Re-checking supersession each time keeps it latest-wins: three quick taps
+        // cost one transition to the last mood, not three in series.
+        while (core.crossfadeActive) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          if (_desiredMood != moodId) return;
+        }
+
+        // Hold both scenes and ease between them. The room never drops out, which
+        // is the whole difference from what this used to do: a scene is bound to
+        // its handle for life, so the only other way to reach a new one is to
+        // dispose the handle and rebuild — and that costs a silence while the new
+        // stems decode.
+        core.crossfadeScene(
+          scenePath,
+          crossfade: transition ?? const Duration(seconds: 35),
+          alignToBar: alignToBar ?? true,
+        );
+        core.setMoodOverride(mood);
+        _currentMood = moodId;
+        if (!_silenced) {
+          _deviceStart(core);
           _setStatus(EngineStatus.playing);
         }
       });
+  }
+
+  /// Builds the first handle of a session around [scenePath]. Only reached when
+  /// there is no engine yet — after that, moods crossfade.
+  void _buildCore(String scenePath, VenueMood mood, String moodId) {
+    final next = PrismCore.create(vertical: PrismVertical.venues);
+    try {
+      next.loadScene(scenePath);
+      next.start();
+      next.setMoodOverride(mood);
+    } catch (_) {
+      next.dispose(); // never leak a half-built handle
+      rethrow;
+    }
+    _core = next;
+    _currentMood = moodId;
+
+    if (_silenced) {
+      _setStatus(EngineStatus.silenced);
+    } else {
+      _deviceStart(next);
+      _setStatus(EngineStatus.playing);
+    }
+  }
 
   /// Stops and destroys the current handle, if any, leaving the engine with no
   /// core. Safe to call repeatedly.

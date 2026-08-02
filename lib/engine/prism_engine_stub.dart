@@ -33,7 +33,7 @@ class PlatformPrismEngine implements PrismEngine {
   Future<void> start() async {}
 
   @override
-  Future<void> setMood(String moodId) async {}
+  Future<void> setMood(String moodId, {Duration? transition, bool? alignToBar}) async {}
 
   @override
   Future<void> silence() async {}
