@@ -5,6 +5,7 @@ import '../../data/models/schedule_entry.dart';
 import '../../data/repositories/schedule_repo.dart';
 import '../../shared/widgets/day_chips.dart';
 import '../../shared/widgets/prism_bottom_sheet.dart';
+import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../settings/widgets/time_field.dart';
 import '../../theme/moods.dart';
@@ -24,15 +25,24 @@ Future<void> showDaypartSheet(BuildContext context, WidgetRef ref,
   );
   if (result == null) return;
   final repo = ref.read(scheduleRepoProvider);
-  switch (result) {
-    case _Save(:final daypart):
-      if (existing == null) {
-        await repo.addDaypart(daypart);
-      } else {
-        await repo.updateDaypart(daypart);
-      }
-    case _Delete(:final id):
-      await repo.deleteDaypart(id);
+  // The sheet has already popped by the time these run, so a failure has no
+  // dialog to report into and nothing in lib/ installs a global error handler —
+  // without this the edit silently does not happen and the grid just keeps
+  // showing the old block. Same shape as showExceptionSheet and the Floor
+  // screen's mutations.
+  try {
+    switch (result) {
+      case _Save(:final daypart):
+        if (existing == null) {
+          await repo.addDaypart(daypart);
+        } else {
+          await repo.updateDaypart(daypart);
+        }
+      case _Delete(:final id):
+        await repo.deleteDaypart(id);
+    }
+  } catch (e) {
+    if (context.mounted) showPrismError(context, e);
   }
 }
 
