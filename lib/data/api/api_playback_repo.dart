@@ -114,6 +114,16 @@ class ApiPlaybackRepo implements PlaybackRepo {
     await _now.refresh();
   }
 
+  @override
+  Future<void> returnToAuto() async {
+    // Same endpoint the Venues quick-fix uses; the server sets
+    // zone_state.desired_mode = 'auto' and bumps desired_revision. Refreshing
+    // `_now` (not just the venue lists) is the point of putting this here — the
+    // hero reads its override flag from this stream.
+    await _client.post('/zones/${_scope.requireZone()}/return-to-auto');
+    await _now.refresh();
+  }
+
   // --- Takeover --------------------------------------------------------------
 
   @override
@@ -302,6 +312,10 @@ class ApiPlaybackRepo implements PlaybackRepo {
         paused: json['paused'] as bool? ?? false,
         pausedBy: json['paused_by'] as String?,
         contextLine: json['context_line'] as String? ?? '',
+        // Absent on older backends, and absence must read as "on schedule" —
+        // showing a Back to Auto control for a room that is already on auto is
+        // worse than not showing it at all.
+        offSchedule: json['off_schedule'] as bool? ?? false,
       );
 
   static TakeoverState _takeoverFrom(Map<String, dynamic> json) {

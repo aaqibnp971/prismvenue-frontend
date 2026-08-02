@@ -117,7 +117,48 @@ void main() {
     // the self-driving rail lists no dayparts to also match.
     expect(find.text('Evening warmth'), findsNWidgets(2));
     expect(find.text('Afternoon lift'), findsOneWidget);
+
+    // Choosing a vibe by hand takes the room OFF its schedule, so the hero must
+    // stop claiming Prism is driving — it is not any more — and must offer the
+    // way back. The rail's pill follows for the same reason; the two sit inches
+    // apart and used to contradict each other.
+    expect(find.text('Prism is driving'), findsNothing);
+    expect(find.text('Off schedule · you chose this vibe'), findsOneWidget);
+    expect(find.text('Off schedule'), findsOneWidget); // rail pill
+    expect(find.text('Back to Auto'), findsOneWidget);
+  });
+
+  testWidgets('Back to Auto hands the room to the schedule again',
+      (tester) async {
+    await pumpFloor(tester, email: 'manager@marinacafe.com');
+
+    // Take the room off schedule the way a manager does.
+    await tester.tap(find.text('Evening warmth'));
+    await _settle(tester);
+    await tester.tap(find.text('Switch the vibe'));
+    await _settle(tester);
+    expect(find.text('Back to Auto'), findsOneWidget);
+
+    // Confirmed, not immediate — this changes what the room plays (cf. S01-3).
+    await tester.tap(find.text('Back to Auto'));
+    await _settle(tester);
+    expect(find.text('Let Prism take it from here?'), findsOneWidget);
+
+    // Cancel leaves the override in place.
+    await tester.tap(find.text('Cancel'));
+    await _settle(tester);
+    expect(find.text('Off schedule · you chose this vibe'), findsOneWidget);
+
+    await tester.tap(find.text('Back to Auto'));
+    await _settle(tester);
+    await tester.tap(find.text('Let Prism drive'));
+    await _settle(tester);
+
+    // Back on schedule: the pill flips, the control retires, and the mood the
+    // manager chose keeps playing — handing back control is not an undo.
     expect(find.text('Prism is driving'), findsOneWidget);
+    expect(find.text('Back to Auto'), findsNothing);
+    expect(find.text('Evening warmth'), findsNWidgets(2));
   });
 
   testWidgets('S01-2 pause/resume via the hero button', (tester) async {

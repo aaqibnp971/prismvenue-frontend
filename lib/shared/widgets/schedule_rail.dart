@@ -19,6 +19,7 @@ class ScheduleRail extends StatelessWidget {
     required this.entries,
     required this.nowIndex,
     this.selfDrive = false,
+    this.offSchedule = false,
     this.horizontal = false,
   });
 
@@ -30,6 +31,12 @@ class ScheduleRail extends StatelessWidget {
   /// schedule is in charge when nothing is following it — the rail shows the
   /// self-drive state instead.
   final bool selfDrive;
+
+  /// A human overrode the plan, so neither "Auto" nor "Self-drive" is true
+  /// right now. Without this the rail keeps announcing Auto over a room
+  /// somebody has taken off its schedule, contradicting the hero card two
+  /// inches away.
+  final bool offSchedule;
 
   /// §6-A1 portrait: the rail "moves below the mood grid as a horizontal
   /// strip" — same header + rows rendered as a scrollable strip (derived;
@@ -55,10 +62,20 @@ class ScheduleRail extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(_header,
-                    style: PrismType.labelCaps
-                        .copyWith(color: palette.textSecondary)),
-                StatusPill(text: selfDrive ? 'Self-drive' : 'Auto'),
+                // Flexible so the header yields rather than the row
+                // overflowing: "Off schedule" is a wider pill than "Auto", and
+                // the rail is a fixed 268.
+                Flexible(
+                  child: Text(_header,
+                      overflow: TextOverflow.ellipsis,
+                      style: PrismType.labelCaps
+                          .copyWith(color: palette.textSecondary)),
+                ),
+                StatusPill(
+                    text: offSchedule
+                        ? 'Off schedule'
+                        : (selfDrive ? 'Self-drive' : 'Auto'),
+                    tone: offSchedule ? PillTone.amber : PillTone.accent),
               ],
             ),
             const SizedBox(height: 10),
@@ -175,10 +192,17 @@ class ScheduleRail extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(_header,
-                    style:
-                        PrismType.labelCaps.copyWith(color: palette.textSecondary)),
-                StatusPill(text: selfDrive ? 'Self-drive' : 'Auto'),
+                Flexible(
+                  child: Text(_header,
+                      overflow: TextOverflow.ellipsis,
+                      style: PrismType.labelCaps
+                          .copyWith(color: palette.textSecondary)),
+                ),
+                StatusPill(
+                    text: offSchedule
+                        ? 'Off schedule'
+                        : (selfDrive ? 'Self-drive' : 'Auto'),
+                    tone: offSchedule ? PillTone.amber : PillTone.accent),
               ],
             ),
           ),

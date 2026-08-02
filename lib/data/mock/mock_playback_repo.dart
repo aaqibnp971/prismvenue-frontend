@@ -63,7 +63,14 @@ class MockPlaybackRepo implements PlaybackRepo {
 
   @override
   Future<void> setMood(String moodId) async {
-    _emit(_state.copyWith(moodId: moodId, paused: false));
+    // Tapping a mood IS the override — that is what takes the room off its
+    // schedule, and what the Floor screen's Back to Auto control undoes.
+    _emit(_state.copyWith(moodId: moodId, paused: false, offSchedule: true));
+  }
+
+  @override
+  Future<void> returnToAuto() async {
+    _emit(_state.copyWith(offSchedule: false));
   }
 
   @override
