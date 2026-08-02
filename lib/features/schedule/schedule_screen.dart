@@ -7,15 +7,15 @@ import '../../data/models/schedule_entry.dart';
 import '../../data/repositories/schedule_repo.dart';
 import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/prism_icons.dart';
+import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/seg_toggle.dart';
-import '../../theme/moods.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
 import 'daypart_sheet.dart';
+import 'week_grid.dart';
 import 'week_picker.dart';
 
-const _dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const _monthNames = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -71,8 +71,19 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                   SegToggle(
                     options: const ['Self-drive', 'Custom plan'],
                     selected: mode == ScheduleMode.selfDrive ? 0 : 1,
-                    onChanged: (i) => ref.read(scheduleRepoProvider).setMode(
-                        i == 0 ? ScheduleMode.selfDrive : ScheduleMode.custom),
+                    // Awaited and caught: switching self-drive ⇄ custom decides
+                    // whether the saved plan runs at all, so a failure that
+                    // leaves the toggle looking switched is worse here than
+                    // almost anywhere else in the app.
+                    onChanged: (i) async {
+                      try {
+                        await ref.read(scheduleRepoProvider).setMode(i == 0
+                            ? ScheduleMode.selfDrive
+                            : ScheduleMode.custom);
+                      } catch (e) {
+                        if (context.mounted) showPrismError(context, e);
+                      }
+                    },
                   ),
                   const SizedBox(height: 15),
                   Expanded(
@@ -205,26 +216,7 @@ class _WeekPlan extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 12),
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (var day = 0; day < 7; day++) ...[
-                if (day > 0) const SizedBox(width: 8),
-                Expanded(
-                  child: _DayColumn(
-                    dayName: _dayNames[day],
-                    date: weekStart.add(Duration(days: day)),
-                    dayparts: [
-                      for (final d in plan)
-                        if (d.dayIndex == day) d
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
+        Expanded(child: WeekGrid(weekStart: weekStart, plan: plan)),
       ],
     );
   }
@@ -252,94 +244,6 @@ class _ChevronButton extends StatelessWidget {
         ),
         child: PrismChevron(
             direction: direction, size: 13, color: palette.textPrimary),
-      ),
-    );
-  }
-}
-
-class _DayColumn extends ConsumerWidget {
-  const _DayColumn({
-    required this.dayName,
-    required this.date,
-    required this.dayparts,
-  });
-
-  final String dayName;
-  final DateTime date;
-  final List<Daypart> dayparts;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final palette = Theme.of(context).extension<PrismPalette>()!;
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('$dayName ${date.day}',
-              textAlign: TextAlign.center,
-              style:
-                  PrismType.labelCaps.copyWith(color: palette.textSecondary)),
-          const SizedBox(height: 8),
-          for (final daypart in dayparts) ...[
-            _DaypartRow(daypart: daypart),
-            const SizedBox(height: 6),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _DaypartRow extends ConsumerWidget {
-  const _DaypartRow({required this.daypart});
-
-  final Daypart daypart;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final palette = Theme.of(context).extension<PrismPalette>()!;
-    final mood = moodById(daypart.moodId);
-    // §6-A2: `tile2` flash while pressed.
-    return Pressable(
-      onTap: () => showDaypartSheet(context, ref, existing: daypart),
-      effect: PressEffect.flash,
-      borderRadius: 10,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 9),
-        decoration: BoxDecoration(
-          color: palette.surface,
-          border: Border.all(color: palette.border),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(daypart.rangeLabel,
-                style: PrismType.label.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: palette.textSecondary)),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: mood.dot(palette.brightness),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(mood.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: PrismType.bodySm.copyWith(
-                          fontSize: 12, color: palette.textPrimary)),
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:prism_venues/data/mock/mock_playback_repo.dart';
 import 'package:prism_venues/data/repositories/playback_repo.dart';
 import 'package:prism_venues/main.dart';
+import 'package:prism_venues/features/schedule/week_grid.dart';
 import 'package:prism_venues/shared/widgets/prism_bottom_sheet.dart';
 
 /// §2 S03 Schedule: self-drive ⇄ custom, week grid, add/edit/delete
@@ -114,6 +115,48 @@ void main() {
     expect(find.text('+ Add'), findsOneWidget);
     expect(find.textContaining(' – '), findsWidgets);
   });
+
+  testWidgets('S03-2 drag: a long-press drag moves a daypart in time',
+      (tester) async {
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    // The grid is a time axis now, so horizontal distance IS time. Monday's
+    // first block is 7 - 11 am; drag it two hours later.
+    final block = find.text('7 – 11 am').first;
+    final gridWidth = tester.getSize(find.byType(WeekGrid)).width;
+    final pxPerHour = (gridWidth - 46) / 16; // 7-23 open hours, minus the gutter
+
+    final gesture = await tester.startGesture(tester.getCenter(block));
+    await tester.pump(const Duration(milliseconds: 600)); // arm the long-press
+    await gesture.moveBy(Offset(pxPerHour * 2, 0));
+    await tester.pump();
+    await gesture.up();
+    await _settle(tester);
+
+    // Committed through the repo and returned via the stream, not applied
+    // locally — the label the grid renders is the moved one.
+    expect(find.text('9 am – 1 pm'), findsWidgets);
+  });
+
+  testWidgets('S03-2 drag: a sub-hour drag snaps back and writes nothing',
+      (tester) async {
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    final block = find.text('7 – 11 am').first;
+    final gesture = await tester.startGesture(tester.getCenter(block));
+    await tester.pump(const Duration(milliseconds: 600));
+    await gesture.moveBy(const Offset(3, 0)); // well under one hour
+    await tester.pump();
+    await gesture.up();
+    await _settle(tester);
+
+    // One hour is the only granularity the model can express, so anything
+    // smaller must round to no change at all rather than a partial write.
+    expect(find.text('7 – 11 am'), findsWidgets);
+  });
+
 }
 
 /// Bounded settle — chrome may host looping animations.
