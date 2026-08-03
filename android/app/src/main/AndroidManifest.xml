@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Only the debug and profile manifests declare this by default, so a
+         release build reaches every API call as a SocketException. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="prism_venues"
         android:name="${applicationName}"
