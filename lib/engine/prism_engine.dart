@@ -64,7 +64,18 @@ abstract class PrismEngine {
   ///
   /// Unknown ids are ignored rather than defaulting, because a silent default
   /// means a room quietly playing the wrong thing.
-  Future<void> setMood(String moodId);
+  ///
+  /// [transition] is how long the room takes to ease from the current vibe to
+  /// this one — `Guardrails.transitionDuration`, i.e. the Seamless / Gentle /
+  /// Lively setting. [alignToBar] lets the change wait for the outgoing music's
+  /// next loop boundary so nothing is cut mid-phrase.
+  ///
+  /// Both are nullable rather than defaulted on purpose: a default here would
+  /// have to be repeated by every implementation (Dart requires it of
+  /// implementers), and the value actually used would then come from whichever
+  /// class happened to run — a divergence nothing would catch. Null means "the
+  /// engine's own default", resolved in one place.
+  Future<void> setMood(String moodId, {Duration? transition, bool? alignToBar});
 
   /// Stops rendering so someone else can own the speakers. This is what
   /// Takeover calls, and what Pause calls. Idempotent.

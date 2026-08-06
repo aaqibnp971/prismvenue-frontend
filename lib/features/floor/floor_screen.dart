@@ -10,6 +10,7 @@ import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/schedule_rail.dart';
 import '../../theme/moods.dart';
+import 'widgets/confirm_auto_dialog.dart';
 import 'widgets/confirm_vibe_dialog.dart';
 import 'widgets/hero_card.dart';
 import 'widgets/mood_grid.dart';
@@ -28,6 +29,7 @@ class FloorScreen extends ConsumerWidget {
     final user = ref.watch(sessionProvider);
     final playback = ref.watch(nowPlayingProvider);
     final noise = ref.watch(noiseProvider);
+    final takeover = ref.watch(takeoverStateProvider);
     final schedule = ref.watch(todayScheduleProvider);
     final header = ref.watch(venueHeaderProvider);
     if (user == null) return const SizedBox.shrink(); // router redirects
@@ -76,6 +78,26 @@ class FloorScreen extends ConsumerWidget {
                             if (context.mounted) showPrismError(context, e);
                           }
                         },
+                        // Hidden during a takeover: S02 already owns the
+                        // hand-back ("Return to Prism now"), and two competing
+                        // controls for the same room is how the dashboard and
+                        // the speakers end up disagreeing.
+                        onReturnToAuto: takeover.value?.active == true
+                            ? null
+                            : () async {
+                                final confirmed =
+                                    await showConfirmAutoDialog(context);
+                                if (confirmed != true) return;
+                                try {
+                                  await ref
+                                      .read(playbackRepoProvider)
+                                      .returnToAuto();
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    showPrismError(context, e);
+                                  }
+                                }
+                              },
                         onTakeOver: () => context.go('/takeover'),
                       ),
                       const SizedBox(height: 20),
@@ -104,6 +126,8 @@ class FloorScreen extends ConsumerWidget {
                             entries: today.entries,
                             nowIndex: today.nowIndex,
                             selfDrive: today.selfDrive,
+                            offSchedule:
+                                playback.value?.offSchedule ?? false,
                             horizontal: true,
                           ),
                         ),
@@ -128,6 +152,8 @@ class FloorScreen extends ConsumerWidget {
                             entries: today.entries,
                             nowIndex: today.nowIndex,
                             selfDrive: today.selfDrive,
+                            offSchedule:
+                                playback.value?.offSchedule ?? false,
                           ),
                     ),
                   ],

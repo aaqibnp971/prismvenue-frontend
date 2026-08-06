@@ -42,6 +42,23 @@ class Guardrails {
 
   String get bandLabel => '$volumeMin–$volumeMax%';
 
+  /// How long the room takes to move from one vibe to the next — the overlap length the
+  /// engine crossfades over. Lives next to [transitionLabel] deliberately: S05-3 publishes
+  /// these durations to the manager ("~60s", "~35s", "~8s"), so label and behaviour must
+  /// not be able to drift apart.
+  Duration get transitionDuration => switch (transition) {
+        TransitionSmoothness.seamless => const Duration(seconds: 60),
+        TransitionSmoothness.gentle => const Duration(seconds: 35),
+        TransitionSmoothness.lively => const Duration(seconds: 8),
+      };
+
+  /// Whether the transition waits for the outgoing scene's next loop boundary before it
+  /// starts. Musically it is the better answer — the material leaving is never cut
+  /// mid-phrase — but the wait is up to one loop period, which is 16 s with the shipped
+  /// stems. Inside a 60 s or 35 s blend that is invisible; in front of an 8 s one it reads
+  /// as the app ignoring the tap, so Lively trades the alignment for responsiveness.
+  bool get transitionAlignsToBar => transition != TransitionSmoothness.lively;
+
   String get transitionLabel => switch (transition) {
         TransitionSmoothness.seamless => 'Seamless',
         TransitionSmoothness.gentle => 'Gentle',

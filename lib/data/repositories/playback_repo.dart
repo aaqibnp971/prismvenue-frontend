@@ -22,6 +22,17 @@ abstract class PlaybackRepo {
 
   Future<void> resume();
 
+  /// Hands the room back to the schedule / self-drive after a manual override,
+  /// clearing [PlaybackState.offSchedule]. Idempotent server-side.
+  ///
+  /// Lives here rather than on `VenueRepo.returnZoneToAuto` — which does the
+  /// same thing for a zone row — because the flag that gates the Floor control
+  /// rides on [PlaybackState], and only the playback repo can refresh the
+  /// now-playing stream that carries it. Doing it through VenueRepo would leave
+  /// the hero showing an override the server had already cleared. PlaybackRepo
+  /// already owns the other hand-the-room-back verb, [endTakeover].
+  Future<void> returnToAuto();
+
   // ---- Takeover (§2 S02) ----
 
   /// Emits the current takeover state immediately, then every second while

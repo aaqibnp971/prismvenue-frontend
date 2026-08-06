@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/models/playback_state.dart';
 import '../../../shared/widgets/noise_meter.dart';
+import '../../../shared/widgets/pressable.dart';
 import '../../../shared/widgets/status_pill.dart';
 import '../../../shared/widgets/take_over_button.dart';
 import '../../../theme/moods.dart';
@@ -21,12 +22,19 @@ class HeroCard extends StatelessWidget {
     required this.noise,
     this.onTogglePause,
     this.onTakeOver,
+    this.onReturnToAuto,
   });
 
   final PlaybackState state;
   final int noise;
   final VoidCallback? onTogglePause;
   final VoidCallback? onTakeOver;
+
+  /// Hands the room back to the schedule. Null hides the control — the Floor
+  /// screen passes null during a takeover, where S02 already owns the hand-back
+  /// and two competing controls would be exactly the dashboard/speaker
+  /// disagreement the engine seam exists to prevent.
+  final VoidCallback? onReturnToAuto;
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +57,12 @@ class HeroCard extends StatelessWidget {
               ],
             ),
           )
-        : const StatusPill(text: 'Prism is driving', dot: true);
+        : state.offSchedule
+            // Someone chose this vibe, so "Prism is driving" would be a lie —
+            // and it is the lie that hides the fact the schedule is not running.
+            ? const StatusPill(
+                text: 'Off schedule · you chose this vibe', tone: PillTone.amber)
+            : const StatusPill(text: 'Prism is driving', dot: true);
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 22),
@@ -101,6 +114,21 @@ class HeroCard extends StatelessWidget {
                         style: PrismType.moodNameHero
                             .copyWith(color: palette.textPrimary)),
                     pill,
+                    // Only while the room is actually overridden. A permanently
+                    // visible hand-back implies something is wrong when nothing
+                    // is, and S01-1's resting state is "Prism is driving".
+                    if (state.offSchedule && onReturnToAuto != null)
+                      Pressable(
+                        onTap: onReturnToAuto,
+                        child: Text(
+                          'Back to Auto',
+                          style: PrismType.microHelper.copyWith(
+                            color: palette.accent,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
                     Text(state.contextLine,
                         style: PrismType.microHelper
                             .copyWith(color: palette.textSecondary)),
