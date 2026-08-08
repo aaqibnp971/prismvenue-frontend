@@ -9,12 +9,14 @@ import '../../data/models/guardrails.dart';
 import '../../data/models/venue.dart';
 import '../../data/repositories/settings_repo.dart';
 import '../../data/repositories/venue_repo.dart';
+import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/prism_field.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/settings_row.dart';
 import '../../theme/moods.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
+import 'confirm_remove_zone_dialog.dart';
 
 /// S05-5 "Zone detail — name, hours, player, vibe, volume, remove". The
 /// README gives this frame one line, so the form layout is derived: name
@@ -114,9 +116,26 @@ class _ZoneDetailScreenState extends ConsumerState<ZoneDetailScreen> {
                           const SizedBox(height: 18),
                           GestureDetector(
                             onTap: () async {
-                              await ref
-                                  .read(venueRepoProvider)
-                                  .removeZone(zoneId);
+                              // Confirmed, not immediate. The app already puts
+                              // a modal in front of *changing the music*;
+                              // deleting a room's entire speaker configuration
+                              // on one undoable tap was the sharper asymmetry.
+                              final confirmed =
+                                  await showConfirmRemoveZoneDialog(
+                                context,
+                                zoneName: zone.name,
+                              );
+                              if (confirmed != true) return;
+                              try {
+                                await ref
+                                    .read(venueRepoProvider)
+                                    .removeZone(zoneId);
+                              } catch (e) {
+                                if (context.mounted) {
+                                  showPrismError(context, e);
+                                }
+                                return;
+                              }
                               if (context.mounted) context.go(backTarget);
                             },
                             child: Container(

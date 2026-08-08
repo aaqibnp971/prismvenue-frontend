@@ -26,7 +26,10 @@ class TakeOverButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
+          // Centred for the same reason as AutoButton: the Floor hero stretches
+          // the pair to share a row on narrow screens.
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(LucideIcons.headphones, size: 17, color: palette.textPrimary),
             const SizedBox(width: 9),

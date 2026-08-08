@@ -85,11 +85,17 @@ class PrismTopBar extends ConsumerWidget {
         color: palette.surface,
         border: Border(bottom: BorderSide(color: palette.border)),
       ),
-      child: Row(
-        children: [
-          // Left (flex): [back] + logo.
-          Expanded(
-            child: Row(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Two symmetric Expanded sides reserve equal width, but the right
+          // (theme toggle + avatar, ~155px) needs far more than the left (logo,
+          // ~40px). On a phone the right half is too narrow and the toggle
+          // overflows. Above this width there is room for the symmetry, which
+          // is what keeps the venue name truly centred (§2.0).
+          final tight = constraints.maxWidth < 700;
+
+          final left = Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 if (showBack) ...[
                   GestureDetector(
@@ -114,13 +120,16 @@ class PrismTopBar extends ConsumerWidget {
                 ],
                 const PrismLogo(height: 26),
               ],
-            ),
-          ),
-          const SizedBox(width: 12), // row gap 12 (§2.0)
-          // Center (fixed size).
-          Column(
+            );
+
+          // The venue name is the thing that can afford to ellipsize; the
+          // controls either side are not.
+          final centre = Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text(title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: PrismType.body.copyWith(
                       fontWeight: FontWeight.w700,
                       color: palette.textPrimary)),
@@ -137,18 +146,22 @@ class PrismTopBar extends ConsumerWidget {
                     ),
                     const SizedBox(width: 5),
                   ],
-                  Text(subtitle,
-                      style: PrismType.micro.copyWith(
-                          fontWeight: FontWeight.w400,
-                          color: palette.textSecondary)),
+                  Flexible(
+                    child: Text(subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: PrismType.micro.copyWith(
+                            fontWeight: FontWeight.w400,
+                            color: palette.textSecondary)),
+                  ),
                 ],
               ),
             ],
-          ),
-          const SizedBox(width: 12), // row gap 12 (§2.0)
-          // Right (flex, end, gap 10): theme seg + avatar.
-          Expanded(
-            child: Row(
+          );
+
+          // Right (end, gap 10): theme seg + avatar.
+          final right = Row(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 SegToggle(
@@ -166,9 +179,18 @@ class PrismTopBar extends ConsumerWidget {
                       initials: user.initials, color: user.avatarColor),
                 ),
               ],
-            ),
-          ),
-        ],
+            );
+
+          return Row(
+            children: [
+              if (tight) left else Expanded(child: left),
+              const SizedBox(width: 12), // row gap 12 (§2.0)
+              Flexible(child: centre),
+              const SizedBox(width: 12),
+              if (tight) right else Expanded(child: right),
+            ],
+          );
+        },
       ),
     );
   }

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../data/models/playback_state.dart';
+import '../../../shared/widgets/auto_button.dart';
 import '../../../shared/widgets/noise_meter.dart';
-import '../../../shared/widgets/pressable.dart';
 import '../../../shared/widgets/status_pill.dart';
 import '../../../shared/widgets/take_over_button.dart';
 import '../../../theme/moods.dart';
@@ -26,7 +26,9 @@ class HeroCard extends StatelessWidget {
   });
 
   final PlaybackState state;
-  final int noise;
+  /// 0–100, or null when nothing has reported. Null renders an empty track and
+  /// a dash rather than inventing a plausible number — see [NoiseMeter].
+  final int? noise;
   final VoidCallback? onTogglePause;
   final VoidCallback? onTakeOver;
 
@@ -64,6 +66,29 @@ class HeroCard extends StatelessWidget {
                 text: 'Off schedule · you chose this vibe', tone: PillTone.amber)
             : const StatusPill(text: 'Prism is driving', dot: true);
 
+    // The two controls together want ~260px. On a phone that leaves the mood
+    // name a column barely wider than one word ("Mor / ning / calm"), so below
+    // this width they move to their own row underneath instead of competing
+    // with the content for the same line.
+    // Left of "Take over", so the pair reads left-to-right as "Prism drives"
+    // → "I drive". Hidden during a takeover for the same reason the old link
+    // was: S02 owns the hand-back there.
+    //
+    // [stretch] is the stacked case: on their own row the two share the width
+    // rather than sitting at their natural size, which at phone widths is
+    // wider than the card.
+    List<Widget> actions({required bool stretch}) {
+      Widget fit(Widget button) =>
+          stretch ? Expanded(child: button) : button;
+      return [
+        if (onReturnToAuto != null) ...[
+          fit(AutoButton(active: !state.offSchedule, onTap: onReturnToAuto)),
+          const SizedBox(width: 10),
+        ],
+        fit(TakeOverButton(onTap: onTakeOver)),
+      ];
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 22),
       decoration: BoxDecoration(
@@ -71,7 +96,37 @@ class HeroCard extends StatelessWidget {
         border: Border.all(color: palette.border),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Row(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stacked = constraints.maxWidth < 640;
+          final content = _content(context, palette, mood, pill);
+
+          if (stacked) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                content,
+                const SizedBox(height: 18),
+                Row(children: actions(stretch: true)),
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(child: content),
+              const SizedBox(width: 20),
+              ...actions(stretch: false),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _content(
+      BuildContext context, PrismPalette palette, Mood mood, Widget pill) {
+    return Row(
         children: [
           GestureDetector(
             onTap: onTogglePause,
@@ -114,21 +169,11 @@ class HeroCard extends StatelessWidget {
                         style: PrismType.moodNameHero
                             .copyWith(color: palette.textPrimary)),
                     pill,
-                    // Only while the room is actually overridden. A permanently
-                    // visible hand-back implies something is wrong when nothing
-                    // is, and S01-1's resting state is "Prism is driving".
-                    if (state.offSchedule && onReturnToAuto != null)
-                      Pressable(
-                        onTap: onReturnToAuto,
-                        child: Text(
-                          'Back to Auto',
-                          style: PrismType.microHelper.copyWith(
-                            color: palette.accent,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
+                    // The hand-back used to live here as a small "Back to Auto"
+                    // link, visible only once the room was already overridden.
+                    // It is now the standing AutoButton beside "Take over" —
+                    // staff could not discover "just follow the schedule"
+                    // without first overriding to make the link appear.
                     Text(state.contextLine,
                         style: PrismType.microHelper
                             .copyWith(color: palette.textSecondary)),
@@ -139,10 +184,7 @@ class HeroCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 20),
-          TakeOverButton(onTap: onTakeOver),
         ],
-      ),
     );
   }
 }

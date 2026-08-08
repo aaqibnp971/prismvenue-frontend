@@ -1,4 +1,4 @@
-package com.example.prism_venues
+package com.r13.prismvenues
 
 import io.flutter.embedding.android.FlutterActivity
 

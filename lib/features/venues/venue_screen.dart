@@ -6,6 +6,7 @@ import '../../app/session.dart';
 import '../../app/venue_header.dart';
 import '../../data/models/zone.dart';
 import '../../data/repositories/venue_repo.dart';
+import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/zone_row.dart' as rows;
 import '../../theme/moods.dart';
@@ -110,9 +111,17 @@ class VenueScreen extends ConsumerWidget {
                                 zone.status == ZoneStatus.offSchedule
                                     ? 'Return to Auto'
                                     : null,
-                            onQuickFix: () => ref
-                                .read(venueRepoProvider)
-                                .returnZoneToAuto(venue.id, zone.id),
+                            onQuickFix: () async {
+                              try {
+                                await ref
+                                    .read(venueRepoProvider)
+                                    .returnZoneToAuto(venue.id, zone.id);
+                              } catch (e) {
+                                if (context.mounted) {
+                                  showPrismError(context, e);
+                                }
+                              }
+                            },
                             // §4 edge: venue → zone-detail (S05-5).
                             onTap: zone.status == ZoneStatus.offSchedule
                                 ? null

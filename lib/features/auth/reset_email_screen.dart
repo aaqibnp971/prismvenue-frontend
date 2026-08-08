@@ -11,14 +11,19 @@ import '../../theme/palette.dart';
 import '../../theme/typography.dart';
 import 'widgets/auth_shell.dart';
 
-/// The email the reset flow is acting on — shown bold on S00-3. Seeded with
-/// the frame's value (S00-2 shows the field filled with priya@marinacafe.com).
+/// The email the reset flow is acting on — shown bold on S00-3.
+///
+/// Empty, not seeded. S00-2 draws the field filled with priya@marinacafe.com,
+/// but that is the frame illustrating a filled state, not a default: shipped as
+/// one it meant anyone who opened "Forgot password" and tapped straight through
+/// mailed a reset code to a real person's inbox, and the next screen told them
+/// in bold that the code had gone there.
 final resetEmailProvider =
     NotifierProvider<ResetEmailNotifier, String>(ResetEmailNotifier.new);
 
 class ResetEmailNotifier extends Notifier<String> {
   @override
-  String build() => 'priya@marinacafe.com';
+  String build() => '';
 
   void set(String email) => state = email;
 }
@@ -62,6 +67,13 @@ class _ResetEmailScreenState extends ConsumerState<ResetEmailScreen> {
 
   Future<void> _send() async {
     final email = _email.text.trim();
+    // The server deliberately does not say whether an address exists, so an
+    // empty field would otherwise "succeed" and advance to a code screen for
+    // nobody.
+    if (email.isEmpty) {
+      setState(() => _error = 'Enter your email address.');
+      return;
+    }
     ref.read(resetEmailProvider.notifier).set(email);
     setState(() => _error = null);
     try {
@@ -85,10 +97,11 @@ class _ResetEmailScreenState extends ConsumerState<ResetEmailScreen> {
           "Enter your email and we'll send you a 6-digit verification code.",
       onBack: () => context.go('/signin'),
       children: [
-        // Frame shows the field filled, accent border.
+        // Frame shows the field filled; the fill is a hint here, not a value.
         PrismField(
           auth: true,
           controller: _email,
+          hint: 'you@venue.com',
           focusedOverride: true,
           leading: const Icon(LucideIcons.mail),
         ),

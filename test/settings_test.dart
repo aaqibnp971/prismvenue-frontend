@@ -5,6 +5,7 @@ import 'package:prism_venues/app/router.dart';
 import 'package:prism_venues/data/mock/mock_playback_repo.dart';
 import 'package:prism_venues/data/repositories/playback_repo.dart';
 import 'package:prism_venues/main.dart';
+import 'package:prism_venues/shared/widgets/confirm_dialog.dart';
 
 /// §2 S05 Guardrails & settings: home values, volume policy, transitions,
 /// open hours (+ sheets + time dial), zone detail, and the S05-4 takeover
@@ -156,7 +157,25 @@ void main() {
     expect(find.text('Prism Player 01'), findsOneWidget);
     expect(find.text('Remove zone'), findsOneWidget);
 
+    // Destructive, so it confirms. The app already gates *changing the music*
+    // behind a modal; removing a room's whole configuration used to take one
+    // undoable tap.
     await tester.tap(find.text('Remove zone'));
+    await _settle(tester);
+    expect(find.text('Remove this zone?'), findsOneWidget);
+
+    // Cancel leaves the zone alone.
+    await tester.tap(find.text('Cancel'));
+    await _settle(tester);
+    expect(find.text('Remove this zone?'), findsNothing);
+    expect(find.text('Zone name'), findsOneWidget);
+
+    await tester.tap(find.text('Remove zone'));
+    await _settle(tester);
+    await tester.tap(find.descendant(
+      of: find.byType(ConfirmDialog),
+      matching: find.text('Remove zone'),
+    ));
     await _settle(tester);
     expect(find.text('Main floor'), findsNothing);
     expect(find.text('Terrace'), findsOneWidget);
