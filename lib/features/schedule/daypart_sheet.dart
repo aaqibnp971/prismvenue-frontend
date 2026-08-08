@@ -78,6 +78,17 @@ class _DaypartSheetState extends State<_DaypartSheet> {
   late int _start = widget.existing?.startHour ?? 18;
   late int _end = widget.existing?.endHour ?? 21;
 
+  /// Why the range is unusable, or null when it is fine.
+  ///
+  /// Blocks the save rather than warning after the fact: the sheet has already
+  /// popped by the time the write runs, so a server rejection would have no
+  /// dialog to report into.
+  String? get _rangeError {
+    if (_end == _start) return 'Start and end cannot be the same hour.';
+    if (_end < _start) return 'End time must be after the start time.';
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = Theme.of(context).extension<PrismPalette>()!;
@@ -87,13 +98,19 @@ class _DaypartSheetState extends State<_DaypartSheet> {
       title: editing ? 'Edit daypart' : 'Add a daypart',
       sub: 'Pick day, time & mood.',
       primaryLabel: editing ? 'Save' : 'Add daypart',
-      onPrimary: () => Navigator.of(context).pop(_Save(Daypart(
-        id: widget.existing?.id ?? '',
-        dayIndex: _day,
-        startHour: _start,
-        endHour: _end,
-        moodId: _moodId,
-      ))),
+      // There was no cross-field check here and the server validated each hour
+      // only as 0–23, so "Starts 9pm / Ends 7am" saved cleanly, as did a
+      // zero-length 6pm–6pm. These decide what actually plays in the room, and
+      // neither shape has a meaning the scheduler can act on.
+      onPrimary: _rangeError != null
+          ? null
+          : () => Navigator.of(context).pop(_Save(Daypart(
+                id: widget.existing?.id ?? '',
+                dayIndex: _day,
+                startHour: _start,
+                endHour: _end,
+                moodId: _moodId,
+              ))),
       onCancel: () => Navigator.of(context).pop(),
       children: [
         const SizedBox(height: 16),
@@ -128,9 +145,15 @@ class _DaypartSheetState extends State<_DaypartSheet> {
           ],
         ),
         const SizedBox(height: 7),
-        Text('Tap a time to set it on the dial.',
-            style:
-                PrismType.microHelper.copyWith(color: palette.textSecondary)),
+        // Says why the save is unavailable. A disabled button with no reason
+        // reads as a broken sheet.
+        Text(
+          _rangeError ?? 'Tap a time to set it on the dial.',
+          style: PrismType.microHelper.copyWith(
+              color: _rangeError != null
+                  ? palette.red
+                  : palette.textSecondary),
+        ),
         const SizedBox(height: 14),
         Text('Mood',
             style: PrismType.label.copyWith(color: palette.textSecondary)),

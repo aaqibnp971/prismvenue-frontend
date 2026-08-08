@@ -111,8 +111,14 @@ class SettingsScreen extends ConsumerWidget {
                     children: [
                       SettingsRow(
                         title: 'Zones & open hours',
-                        value:
-                            '${venue?.zones.length ?? 2} · ${hours?.rangeLabel ?? '7am–11pm'}',
+                        // A dash, not "2 · 7am–11pm". Those were frame sample
+                        // values standing in for data that had not arrived, so
+                        // a venue with four zones and a late close read as two
+                        // zones closing at 11 until the fetch landed — and if
+                        // it never landed, indefinitely.
+                        value: venue == null || hours == null
+                            ? '—'
+                            : '${venue.zones.length} · ${hours.rangeLabel}',
                         onTap: () => context.go('/settings/hours'),
                       ),
                     ],

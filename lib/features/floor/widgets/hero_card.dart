@@ -26,7 +26,9 @@ class HeroCard extends StatelessWidget {
   });
 
   final PlaybackState state;
-  final int noise;
+  /// 0–100, or null when nothing has reported. Null renders an empty track and
+  /// a dash rather than inventing a plausible number — see [NoiseMeter].
+  final int? noise;
   final VoidCallback? onTogglePause;
   final VoidCallback? onTakeOver;
 

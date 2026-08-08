@@ -26,8 +26,11 @@ class _AddZoneSheet extends StatefulWidget {
 }
 
 class _AddZoneSheetState extends State<_AddZoneSheet> {
-  // Frame shows the field filled "Back patio" with accent border.
-  final _name = TextEditingController(text: 'Back patio');
+  // The frame shows this field filled with "Back patio" to illustrate a filled
+  // state. Seeded as a real default it meant "+ Add zone" → "Add zone" created
+  // a zone actually called Back patio — the same class of defect as the reset
+  // screen shipping with a real person's address in it. Hint, not value.
+  final _name = TextEditingController();
 
   @override
   void dispose() {
@@ -41,12 +44,19 @@ class _AddZoneSheetState extends State<_AddZoneSheet> {
     return PrismBottomSheet(
       title: 'Add a zone',
       primaryLabel: 'Add zone',
-      onPrimary: () => Navigator.of(context).pop(_name.text),
+      // Empty returns null rather than creating an unnamed zone. The caller
+      // already ignores null, so this reads as "nothing to add" rather than
+      // failing somewhere later.
+      onPrimary: () => Navigator.of(context)
+          .pop(_name.text.trim().isEmpty ? null : _name.text),
       onCancel: () => Navigator.of(context).pop(),
       children: [
         const SizedBox(height: 16),
         PrismField(
-            label: 'Zone name', controller: _name, focusedOverride: true),
+            label: 'Zone name',
+            controller: _name,
+            hint: 'Back patio',
+            focusedOverride: true),
         const SizedBox(height: 9),
         Text(
           'A zone is one area with its own speakers. Prism drives each zone '

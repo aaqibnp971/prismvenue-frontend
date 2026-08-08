@@ -28,7 +28,8 @@ class PortfolioScreen extends ConsumerWidget {
     final user = ref.watch(sessionProvider);
     if (user == null) return const SizedBox.shrink(); // router redirects
     final palette = Theme.of(context).extension<PrismPalette>()!;
-    final venues = ref.watch(venuesProvider).value ?? const <Venue>[];
+    final venues = needsAttentionFirst(
+        ref.watch(venuesProvider).value ?? const <Venue>[]);
 
     return Scaffold(
       body: Column(
@@ -92,6 +93,36 @@ class PortfolioScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// S04-2's whole reason for existing is that problems shout. The screen drew a
+/// "Needs attention" chip over a list in whatever order the API returned — and
+/// the API orders by `created_at` — so an offline venue could sit below three
+/// healthy ones under a label claiming otherwise. Nothing sorted on either
+/// side.
+///
+/// Sorted here rather than server-side so the API and the mocks render
+/// identically, which is the same reasoning `routers/venues.py` gives for
+/// leaving order alone. Worth moving into SQL once a portfolio outgrows a
+/// handful of venues.
+///
+/// Offline outranks off-schedule: a room nobody can reach needs someone to walk
+/// to it, while an overridden one is a tap away from fixed. Ties keep the
+/// server's order, so the list does not reshuffle under the reader on refresh.
+@visibleForTesting
+List<Venue> needsAttentionFirst(List<Venue> venues) {
+  int rank(Venue v) => switch (v.worstStatus) {
+        ZoneStatus.offline => 0,
+        ZoneStatus.offSchedule => 1,
+        ZoneStatus.auto => 2,
+      };
+  // Stable: List.sort is not, so compare the original index on a tie.
+  final indexed = venues.indexed.toList()
+    ..sort((a, b) {
+      final byRank = rank(a.$2).compareTo(rank(b.$2));
+      return byRank != 0 ? byRank : a.$1.compareTo(b.$1);
+    });
+  return [for (final (_, venue) in indexed) venue];
 }
 
 /// Thin adapter over the §3 shared VenueRow: derives the sub line (problem

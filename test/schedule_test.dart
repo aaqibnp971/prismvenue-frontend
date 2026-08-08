@@ -97,6 +97,40 @@ void main() {
     expect(find.text('6 – 9 pm'), findsNWidgets(8));
   });
 
+  testWidgets('H-08 a daypart that ends before it starts cannot be saved',
+      (tester) async {
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    await tester.tap(find.text('+ Add'));
+    await _settle(tester);
+    expect(find.text('Add a daypart'), findsOneWidget);
+
+    // Default is 6pm–9pm and saveable.
+    expect(find.text('Tap a time to set it on the dial.'), findsOneWidget);
+
+    // Push the start past the end (6pm → 10pm, against a 9pm end). A reversed
+    // range used to save cleanly on both sides, and it decides what actually
+    // plays in the room.
+    await tester.tap(find.text('6:00 pm'));
+    await _settle(tester);
+    // "10:00" appears twice — the big readout and the quick chip. The chip is
+    // last in the tree.
+    await tester.tap(find.text('10:00').last); // pm already selected
+    await _settle(tester);
+    await tester.tap(find.text('Set 10:00 PM'));
+    await _settle(tester);
+
+    expect(find.text('End time must be after the start time.'), findsOneWidget);
+
+    // The save is blocked rather than warned about after the fact: the sheet
+    // has already popped by the time the write runs, so a server rejection
+    // would have no dialog to report into.
+    await tester.tap(find.text('Add daypart'));
+    await _settle(tester);
+    expect(find.text('Add a daypart'), findsOneWidget); // sheet still open
+  });
+
   testWidgets('S03-3 week picker: choosing a date moves the range header',
       (tester) async {
     await pumpSchedule(tester);

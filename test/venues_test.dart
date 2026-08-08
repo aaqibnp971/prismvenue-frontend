@@ -2,12 +2,59 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prism_venues/data/mock/mock_playback_repo.dart';
+import 'package:prism_venues/data/models/venue.dart';
+import 'package:prism_venues/data/models/zone.dart';
 import 'package:prism_venues/data/repositories/playback_repo.dart';
+import 'package:prism_venues/features/venues/portfolio_screen.dart';
 import 'package:prism_venues/main.dart';
 
 /// §2 S04 Venues: owner triage portfolio, quick-fix, drill-in, and the
 /// add-venue → add-zone flow.
 void main() {
+  group('S04-2 needs-attention ordering', () {
+    Venue venue(String name, ZoneStatus status) => Venue(
+          id: name,
+          name: name,
+          zones: [Zone(id: '$name-z', name: 'Z', status: status, moodId: 'peak')],
+        );
+
+    test('problems rise above healthy venues', () {
+      // The API orders by created_at, so this is the shape that used to reach
+      // the screen: an offline venue sitting below healthy ones, under a chip
+      // reading "Needs attention".
+      final sorted = needsAttentionFirst([
+        venue('Healthy A', ZoneStatus.auto),
+        venue('Healthy B', ZoneStatus.auto),
+        venue('Offline', ZoneStatus.offline),
+        venue('Off schedule', ZoneStatus.offSchedule),
+      ]);
+
+      expect([for (final v in sorted) v.name],
+          ['Offline', 'Off schedule', 'Healthy A', 'Healthy B']);
+    });
+
+    test('offline outranks off-schedule', () {
+      // A room nobody can reach needs someone to walk to it; an overridden one
+      // is a tap away from fixed.
+      final sorted = needsAttentionFirst([
+        venue('Off schedule', ZoneStatus.offSchedule),
+        venue('Offline', ZoneStatus.offline),
+      ]);
+
+      expect(sorted.first.name, 'Offline');
+    });
+
+    test('ties keep the server order, so the list does not reshuffle', () {
+      final sorted = needsAttentionFirst([
+        venue('First', ZoneStatus.auto),
+        venue('Second', ZoneStatus.auto),
+        venue('Third', ZoneStatus.auto),
+      ]);
+
+      expect([for (final v in sorted) v.name], ['First', 'Second', 'Third']);
+    });
+  });
+
   Future<void> pumpPortfolio(WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1024, 768));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -151,10 +198,20 @@ void main() {
     expect(find.textContaining('one area with its own speakers'),
         findsOneWidget);
 
-    // Field is prefilled "Back patio" per the frame; confirm.
+    // The field is empty — "Back patio" is a hint now, not a value. Shipped as
+    // a default it meant "+ Add zone" then "Add zone" created a zone actually
+    // called Back patio.
     await tester.tap(find.text('Add zone'));
     await _settle(tester);
-    expect(find.text('Back patio'), findsOneWidget); // zone chip
+    expect(find.text('Back patio'), findsNothing); // no zone chip added
+
+    // Naming it works.
+    await tester.tap(find.text('+ Add zone'));
+    await _settle(tester);
+    await tester.enterText(find.byType(TextField).last, 'Rooftop bar');
+    await tester.tap(find.text('Add zone'));
+    await _settle(tester);
+    expect(find.text('Rooftop bar'), findsOneWidget); // zone chip
 
     await tester.tap(find.text('Add venue'));
     await _settle(tester);

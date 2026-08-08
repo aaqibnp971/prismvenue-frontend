@@ -11,12 +11,20 @@ import '../../theme/typography.dart';
 class NoiseMeter extends StatelessWidget {
   const NoiseMeter({super.key, required this.value});
 
-  /// 0–100 (%).
-  final int value;
+  /// 0–100 (%), or null when nothing has reported yet.
+  ///
+  /// Nullable on purpose. This used to be a plain int and the Floor screen fed
+  /// it `noise.value ?? 62`, so a zone whose sensor had never reported showed a
+  /// confident 62% — a frame sample value rendered as live telemetry. The venue
+  /// header provider already gets this right: it refuses to claim "online" it
+  /// cannot substantiate. An empty track and a dash say the same thing honestly.
+  final int? value;
 
   @override
   Widget build(BuildContext context) {
     final palette = Theme.of(context).extension<PrismPalette>()!;
+    final known = value;
+    final fillPct = known ?? 0;
     return Row(
       children: [
         Text('Noise',
@@ -29,7 +37,7 @@ class NoiseMeter extends StatelessWidget {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final w = constraints.maxWidth;
-                final fillW = w * value / 100;
+                final fillW = w * fillPct / 100;
                 return SizedBox(
                   height: 14,
                   child: Stack(
@@ -43,15 +51,17 @@ class NoiseMeter extends StatelessWidget {
                           borderRadius: BorderRadius.circular(999),
                         ),
                       ),
-                      Container(
-                        height: 6,
-                        width: fillW,
-                        decoration: BoxDecoration(
-                          color: palette.accent,
-                          borderRadius: BorderRadius.circular(999),
+                      if (known != null)
+                        Container(
+                          height: 6,
+                          width: fillW,
+                          decoration: BoxDecoration(
+                            color: palette.accent,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
                         ),
-                      ),
-                      Positioned(
+                      if (known != null)
+                        Positioned(
                         // `w - 14` goes negative once the track is narrower
                         // than the thumb, and clamp(0, negative) throws
                         // "Invalid argument: 0" — which surfaces as a red
@@ -76,9 +86,12 @@ class NoiseMeter extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        Text('$value%',
-            style: PrismType.button
-                .copyWith(fontSize: 12, color: palette.textPrimary)),
+        Text(known == null ? '—' : '$known%',
+            style: PrismType.button.copyWith(
+                fontSize: 12,
+                color: known == null
+                    ? palette.textTertiary
+                    : palette.textPrimary)),
       ],
     );
   }

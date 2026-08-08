@@ -62,7 +62,10 @@ class FloorScreen extends ConsumerWidget {
                     children: [
                       HeroCard(
                         state: state,
-                        noise: noise.value ?? 62,
+                        // Null, not 62. That fallback was a frame sample value
+                        // rendered as live telemetry, so a zone whose sensor
+                        // had never reported showed a confident 62%.
+                        noise: noise.value,
                         onTogglePause: () async {
                           final repo = ref.read(playbackRepoProvider);
                           try {
