@@ -7,6 +7,7 @@ import '../../app/venue_header.dart';
 import '../../data/repositories/playback_repo.dart';
 import '../../data/repositories/schedule_repo.dart';
 import '../../shared/widgets/error_note.dart';
+import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/schedule_rail.dart';
 import '../../theme/moods.dart';
@@ -53,10 +54,20 @@ class FloorScreen extends ConsumerWidget {
                 final portrait = constraints.maxWidth < 900;
 
                 final main = playback.when(
-                  // Loading/error states are undesigned (§6-B1); the
-                  // mock emits synchronously so these are transient.
-                  loading: () => const SizedBox.shrink(),
-                  error: (e, st) => const SizedBox.shrink(),
+                  // These were both SizedBox.shrink(), on the grounds that the
+                  // mock emits synchronously so they are transient. That
+                  // stopped being true the moment the real API landed: a
+                  // failure painted an empty screen with a nav bar, no message
+                  // and no way to retry.
+                  loading: () => const SizedBox(
+                      height: 260, child: LoadingState()),
+                  error: (e, st) => SizedBox(
+                    height: 260,
+                    child: ErrorState(
+                      error: e,
+                      onRetry: () => ref.invalidate(nowPlayingProvider),
+                    ),
+                  ),
                   data: (state) => Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [

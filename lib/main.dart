@@ -30,9 +30,18 @@ import 'theme/theme.dart';
 /// `--dart-define=PRISM_USE_MOCKS=true` returns an empty list, running the app
 /// exactly as it ran before the backend existed. Useful for design review and
 /// for reproducing the widget tests by hand.
-ProviderContainer buildPrismContainer() {
-  if (Env.useMocks) return ProviderContainer();
+ProviderContainer buildPrismContainer({ThemeMode? initialTheme}) {
+  // The persisted theme is injected rather than read inside the notifier:
+  // Notifier.build() is synchronous, so loading it there would show dark for a
+  // frame and then correct itself on every launch.
+  final themeOverride = [
+    if (initialTheme != null)
+      initialThemeModeProvider.overrideWithValue(initialTheme),
+  ];
+
+  if (Env.useMocks) return ProviderContainer(overrides: themeOverride);
   return ProviderContainer(overrides: [
+    ...themeOverride,
     authRepoProvider.overrideWith(
       (ref) => ApiAuthRepo(
         ref.watch(apiClientProvider),
@@ -75,7 +84,9 @@ ProviderContainer buildPrismContainer() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final container = buildPrismContainer();
+  // Read before the first frame so a light-theme venue never sees dark flash
+  // past. Cheap and local, unlike the session restore below.
+  final container = buildPrismContainer(initialTheme: await readStoredThemeMode());
 
   // Rehydrate before the first frame so the router sees the final session and
   // a returning user never sees the sign-in screen flash past.

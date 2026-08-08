@@ -40,6 +40,12 @@ dependencies:
   lucide_icons_flutter: ^3.1.15
   http: ^1.6.0
   flutter_secure_storage: ^10.3.1
+  # The theme choice, remembered between launches. Deliberately NOT
+  # flutter_secure_storage: that is the platform keychain, which is the wrong
+  # home for a non-secret and which macOS refuses outright without a
+  # keychain-access-groups entitlement (see token_store.dart) — so the one
+  # place persistence had to work is the one place it would have failed.
+  shared_preferences: ^2.3.0
 
   # The sound engine. A path dependency because prism-core is a separate repo
   # that is versioned by its C ABI, not published to pub.dev — see

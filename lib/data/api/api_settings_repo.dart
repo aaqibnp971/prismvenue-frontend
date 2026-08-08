@@ -61,6 +61,11 @@ class ApiSettingsRepo implements SettingsRepo {
 
   // --- Guardrails ------------------------------------------------------------
 
+  final _failures = StreamController<Object>.broadcast();
+
+  @override
+  Stream<Object> get guardrailFailures => _failures.stream;
+
   @override
   Stream<Guardrails> watchGuardrails() => _guardrails.watch();
 
@@ -105,9 +110,12 @@ class ApiSettingsRepo implements SettingsRepo {
             '/zones/${_scope.requireZone()}/guardrails',
             body: _guardrailsToJson(toWrite),
           );
-        } catch (_) {
-          // Swallowed deliberately — see updateGuardrails. The refresh below
-          // reverts the optimistic emit, which is the visible signal.
+        } catch (e) {
+          // Not rethrown — see updateGuardrails, which nine fire-and-forget
+          // call sites rely on not throwing. Reported on the failure stream
+          // instead, so the screens can say what happened rather than leaving
+          // the revert below as the only clue.
+          if (!_failures.isClosed) _failures.add(e);
         }
       }
       // One sync with server truth per burst — after success it confirms the
@@ -351,6 +359,7 @@ class ApiSettingsRepo implements SettingsRepo {
     }
     _settled?.complete();
     _settled = null;
+    _failures.close();
     _guardrails.dispose();
     _openHours.dispose();
   }

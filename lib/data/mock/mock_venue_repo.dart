@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../api/api_exception.dart';
 import '../models/venue.dart';
 import '../models/zone.dart';
 import '../repositories/venue_repo.dart';
@@ -126,6 +127,35 @@ class MockVenueRepo implements VenueRepo {
           ),
       ],
     ));
+    _emit();
+  }
+
+  @override
+  Future<void> renameZone(String zoneId, String name) async {
+    for (var i = 0; i < _venues.length; i++) {
+      final venue = _venues[i];
+      if (!venue.zones.any((z) => z.id == zoneId)) continue;
+      // Mirrors the server's unique (venue_id, name): the mock must reject what
+      // the API rejects, or the screen's error path is never exercised.
+      if (venue.zones.any((z) => z.id != zoneId && z.name == name)) {
+        // An ApiException, not a StateError: messageFor() only surfaces
+        // ApiException.message and turns anything else into "Something went
+        // wrong" — correct for an internal bug, wrong for a constraint the
+        // manager can act on. The mock has to fail the way the API fails or the
+        // screen's error path is never really exercised.
+        throw const ApiException(
+          statusCode: 409,
+          code: 'zone_name_taken',
+          message: 'Another zone in this venue already uses that name.',
+        );
+      }
+      _venues[i] = venue.copyWith(
+        zones: [
+          for (final z in venue.zones)
+            if (z.id == zoneId) z.copyWith(name: name) else z,
+        ],
+      );
+    }
     _emit();
   }
 

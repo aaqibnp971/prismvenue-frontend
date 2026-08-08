@@ -7,6 +7,7 @@ import '../../app/venue_header.dart';
 import '../../data/models/guardrails.dart';
 import '../../data/repositories/settings_repo.dart';
 import '../../shared/widgets/prism_icons.dart';
+import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
@@ -25,6 +26,16 @@ class TransitionsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // A guardrail write that fails reverts the optimistic value, and the revert
+    // used to be the only signal. Fine for a volume slider; not for "Who can
+    // take over", where a manager sets it, watches it flip back and is told
+    // nothing. One listener rather than nine try/catches -- updateGuardrails is
+    // fire-and-forget by design at every call site.
+    ref.listen<AsyncValue<Object>>(guardrailFailureProvider, (_, next) {
+      final error = next.value;
+      if (error != null && context.mounted) showPrismError(context, error);
+    });
+
     final user = ref.watch(sessionProvider);
     if (user == null) return const SizedBox.shrink(); // router redirects
     final palette = Theme.of(context).extension<PrismPalette>()!;

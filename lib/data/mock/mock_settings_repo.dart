@@ -26,6 +26,9 @@ class MockSettingsRepo implements SettingsRepo {
   }
 
   @override
+  Stream<Object> get guardrailFailures => const Stream.empty();
+
+  @override
   Future<void> updateGuardrails(Guardrails next) async {
     _guardrails = next;
     _guardrailsController.add(next);

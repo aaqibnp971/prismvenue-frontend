@@ -7,6 +7,7 @@ import '../../app/venue_header.dart';
 import '../../data/models/zone.dart';
 import '../../data/repositories/venue_repo.dart';
 import '../../shared/widgets/error_note.dart';
+import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/zone_row.dart' as rows;
 import '../../theme/moods.dart';
@@ -64,7 +65,13 @@ class VenueScreen extends ConsumerWidget {
           ),
           Expanded(
             child: venue == null
-                ? const SizedBox.shrink() // unknown id; states undesigned
+                // Was SizedBox.shrink(): a fetch failure and a venue that does
+                // not exist both rendered as an empty screen under a top bar
+                // showing the previous venue's name.
+                ? ErrorState(
+                    message: 'That venue could not be loaded.',
+                    onRetry: () => ref.invalidate(venueProvider(venueId)),
+                  )
                 : SingleChildScrollView(
                     padding: const EdgeInsets.all(15),
                     child: Column(
