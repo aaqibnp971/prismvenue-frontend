@@ -26,6 +26,7 @@ import '../shared/widgets/secondary_button.dart';
 import '../shared/widgets/seg_toggle.dart';
 import '../shared/widgets/settings_row.dart';
 import '../shared/widgets/status_pill.dart';
+import '../shared/widgets/auto_button.dart';
 import '../shared/widgets/take_over_button.dart';
 import '../shared/widgets/time_dial_sheet.dart';
 import '../shared/widgets/venue_row.dart';
@@ -177,6 +178,15 @@ class WidgetGalleryScreen extends StatelessWidget {
       }),
       ('NoiseMeter — 62% (read-only)', (context) {
         return const SizedBox(width: 360, child: NoiseMeter(value: 62));
+      }),
+      ('AutoButton — active / handing back', (context) {
+        return Row(
+          children: [
+            const AutoButton(active: true),
+            const SizedBox(width: 10),
+            AutoButton(active: false, onTap: () {}),
+          ],
+        );
       }),
       ('TakeOverButton & StatusPill tones', (context) {
         return Row(

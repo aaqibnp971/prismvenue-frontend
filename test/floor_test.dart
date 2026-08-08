@@ -3,9 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:prism_venues/data/mock/mock_playback_repo.dart';
+import 'package:prism_venues/data/models/playback_state.dart';
 import 'package:prism_venues/data/repositories/playback_repo.dart';
+import 'package:prism_venues/features/floor/widgets/hero_card.dart';
 import 'package:prism_venues/main.dart';
+import 'package:prism_venues/theme/palette.dart';
+import 'package:prism_venues/theme/theme.dart';
+import 'package:prism_venues/shared/widgets/auto_button.dart';
 import 'package:prism_venues/shared/widgets/mood_tile.dart';
+import 'package:prism_venues/shared/widgets/schedule_rail.dart';
 
 /// §2 S01 Floor behavior against the Marina Café seed: default state,
 /// confirm-before-switch (S01-3), pause/resume (S01-2 ⇄ S01-1), account
@@ -14,8 +20,9 @@ void main() {
   /// [email] decides the role — floor staff are gated out of /schedule, so a
   /// test that needs the mode switch has to sign in as a manager.
   Future<void> pumpFloor(WidgetTester tester,
-      {String email = 'floor@marinacafe.com'}) async {
-    await tester.binding.setSurfaceSize(const Size(1024, 768));
+      {String email = 'floor@marinacafe.com',
+      Size size = const Size(1024, 768)}) async {
+    await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final container = ProviderContainer(overrides: [
       playbackRepoProvider.overrideWith((ref) {
@@ -82,7 +89,15 @@ void main() {
     await _settle(tester);
 
     expect(find.text("TODAY'S SCHEDULE"), findsOneWidget);
-    expect(find.text('Auto'), findsOneWidget);
+    // The rail's own "Auto" chip, not the hero's AutoButton — both say "Auto",
+    // so scope this to the rail or it matches two widgets.
+    expect(
+      find.descendant(
+        of: find.byType(ScheduleRail),
+        matching: find.text('Auto'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('NOW'), findsOneWidget);
     expect(find.text('up next'), findsOneWidget);
     expect(find.text('Prism is picking the vibe'), findsNothing);
@@ -125,11 +140,24 @@ void main() {
     expect(find.text('Prism is driving'), findsNothing);
     expect(find.text('Off schedule · you chose this vibe'), findsOneWidget);
     expect(find.text('Off schedule'), findsOneWidget); // rail pill
-    expect(find.text('Back to Auto'), findsOneWidget);
+    // The Auto button is always on screen; overriding switches it out of its
+    // resting state so it reads as the way back.
+    expect(tester.widget<AutoButton>(find.byType(AutoButton)).active, isFalse);
   });
 
-  testWidgets('Back to Auto hands the room to the schedule again',
+  testWidgets('Auto is a standing control, not one that appears on override',
       (tester) async {
+    await pumpFloor(tester, email: 'manager@marinacafe.com');
+
+    // The point of the feedback this replaced: a venue that has never
+    // overridden must still be able to see that letting Prism drive is an
+    // option. On the resting screen the button is present and reads as on.
+    expect(find.byType(AutoButton), findsOneWidget);
+    expect(tester.widget<AutoButton>(find.byType(AutoButton)).active, isTrue);
+    expect(find.text('Prism is driving'), findsOneWidget);
+  });
+
+  testWidgets('Auto hands the room to the schedule again', (tester) async {
     await pumpFloor(tester, email: 'manager@marinacafe.com');
 
     // Take the room off schedule the way a manager does.
@@ -137,10 +165,10 @@ void main() {
     await _settle(tester);
     await tester.tap(find.text('Switch the vibe'));
     await _settle(tester);
-    expect(find.text('Back to Auto'), findsOneWidget);
+    expect(tester.widget<AutoButton>(find.byType(AutoButton)).active, isFalse);
 
     // Confirmed, not immediate — this changes what the room plays (cf. S01-3).
-    await tester.tap(find.text('Back to Auto'));
+    await tester.tap(find.byType(AutoButton));
     await _settle(tester);
     expect(find.text('Let Prism take it from here?'), findsOneWidget);
 
@@ -149,16 +177,80 @@ void main() {
     await _settle(tester);
     expect(find.text('Off schedule · you chose this vibe'), findsOneWidget);
 
-    await tester.tap(find.text('Back to Auto'));
+    await tester.tap(find.byType(AutoButton));
     await _settle(tester);
     await tester.tap(find.text('Let Prism drive'));
     await _settle(tester);
 
-    // Back on schedule: the pill flips, the control retires, and the mood the
-    // manager chose keeps playing — handing back control is not an undo.
+    // Back on schedule: the pill flips, the button returns to its resting
+    // state, and the mood the manager chose keeps playing — handing back
+    // control is not an undo.
     expect(find.text('Prism is driving'), findsOneWidget);
-    expect(find.text('Back to Auto'), findsNothing);
+    expect(tester.widget<AutoButton>(find.byType(AutoButton)).active, isTrue);
     expect(find.text('Evening warmth'), findsNWidgets(2));
+  });
+
+  testWidgets('the hero survives a phone-width column', (tester) async {
+    // Regression: adding the Auto button squeezed the hero's noise meter below
+    // the width of its own thumb, and NoiseMeter's clamp(0, w - 14) threw
+    // "Invalid argument: 0". A thrown exception renders as a red ErrorWidget
+    // over the whole screen — in release too — so this was a crash, not a
+    // squashed meter. Landscape had the room to hide it.
+    //
+    // The hero is pumped alone rather than through the Floor screen because the
+    // rest of the app is landscape-first by design (§6-A1: portrait reflow is
+    // Phase 4) and still overflows at this width in ways this change did not
+    // cause and does not claim to fix.
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildPrismTheme(PrismPalette.dark),
+        home: Scaffold(
+          body: SizedBox(
+            width: 360,
+            child: HeroCard(
+              state: const PlaybackState(
+                moodId: 'morning-calm',
+                paused: false,
+                contextLine: 'mid-afternoon · ~60% full · clear',
+              ),
+              noise: 62,
+              onReturnToAuto: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // The regression is specifically a *thrown* ArgumentError, which Flutter
+    // paints as a red ErrorWidget over the whole screen — in release too.
+    // Overflow warnings are not the same class of problem: they are cosmetic,
+    // debug-only, and inflated here anyway because the test font (Ahem) draws
+    // every glyph as a square, making the 31px mood name roughly twice its
+    // real width.
+    Object? thrownArgumentError;
+    for (var ex = tester.takeException(); ex != null;
+        ex = tester.takeException()) {
+      if (ex is ArgumentError) thrownArgumentError = ex;
+    }
+    expect(thrownArgumentError, isNull,
+        reason: 'NoiseMeter must not throw when its track is narrower '
+            'than the 14px thumb');
+    expect(find.byType(ErrorWidget), findsNothing);
+    // Both controls still reachable — stacked onto their own row, not dropped.
+    expect(find.byType(AutoButton), findsOneWidget);
+    expect(find.text('Take over'), findsOneWidget);
+  });
+
+  testWidgets('Auto does nothing while it is already on', (tester) async {
+    await pumpFloor(tester, email: 'manager@marinacafe.com');
+
+    // Resting state: tapping must not raise the confirm dialog. A live-looking
+    // control that re-asks a question already answered is worse than an inert
+    // one that plainly reads as "already on".
+    await tester.tap(find.byType(AutoButton));
+    await _settle(tester);
+    expect(find.text('Let Prism take it from here?'), findsNothing);
+    expect(find.text('Prism is driving'), findsOneWidget);
   });
 
   testWidgets('S01-2 pause/resume via the hero button', (tester) async {

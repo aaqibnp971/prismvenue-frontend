@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../theme/palette.dart';
@@ -50,7 +52,13 @@ class NoiseMeter extends StatelessWidget {
                         ),
                       ),
                       Positioned(
-                        left: (fillW - 7).clamp(0, w - 14),
+                        // `w - 14` goes negative once the track is narrower
+                        // than the thumb, and clamp(0, negative) throws
+                        // "Invalid argument: 0" — which surfaces as a red
+                        // ErrorWidget covering the whole screen rather than a
+                        // squashed meter. Narrow is a layout problem; crashing
+                        // is a different and much worse one.
+                        left: (fillW - 7).clamp(0, math.max(0, w - 14)),
                         child: Container(
                           width: 14,
                           height: 14,
