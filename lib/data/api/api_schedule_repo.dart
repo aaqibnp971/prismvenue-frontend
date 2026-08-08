@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../models/schedule_entry.dart';
 import '../repositories/schedule_repo.dart';
 import 'api_client.dart';
@@ -47,8 +49,36 @@ class ApiScheduleRepo implements ScheduleRepo {
     await _today.refresh();
   }
 
+  /// The week currently being watched, so writes land in the right plan and
+  /// the cached fetch is of the right thing.
+  DateTime? _week;
+
   @override
-  Stream<List<Daypart>> watchWeekPlan() => _plan.watch();
+  Stream<List<Daypart>> watchWeekPlan(DateTime? weekStart) {
+    if (weekStart != _week) {
+      _week = weekStart;
+      // The cache is of a different week by definition; drop it rather than
+      // serve last week's plan under this week's header.
+      unawaited(_plan.refresh().catchError((_) {}));
+    }
+    return _plan.watch();
+  }
+
+  @override
+  Future<void> forkWeek(DateTime weekStart) async {
+    await _client.post(
+      '/zones/${_scope.requireZone()}/dayparts/fork',
+      body: {'week_start': _iso(weekStart)},
+    );
+    // The fork has new ids, so the screen must re-read before editing them —
+    // this is why forking is its own endpoint rather than a flag on the writes.
+    await _refreshPlan();
+  }
+
+  static String _iso(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
 
   @override
   Future<void> addDaypart(Daypart daypart) async {
@@ -105,8 +135,10 @@ class ApiScheduleRepo implements ScheduleRepo {
   }
 
   Future<List<Daypart>> _fetchPlan() async {
-    final json =
-        await _client.get('/zones/${_scope.requireZone()}/dayparts') as List;
+    final week = _week;
+    final query = week == null ? '' : '?week=${_iso(week)}';
+    final json = await _client
+        .get('/zones/${_scope.requireZone()}/dayparts$query') as List;
     return [
       for (final raw in json)
         _daypartFrom((raw as Map).cast<String, dynamic>()),
@@ -119,6 +151,9 @@ class ApiScheduleRepo implements ScheduleRepo {
         startHour: json['start_hour'] as int? ?? 0,
         endHour: json['end_hour'] as int? ?? 0,
         moodId: json['mood_id'] as String? ?? 'daytime-flow',
+        weekStart: json['week_start'] == null
+            ? null
+            : DateTime.tryParse(json['week_start'] as String),
         // Prefer the server's label so the two can never disagree about how a
         // range reads; Daypart derives its own if it is absent.
         serverRangeLabel: json['range_label'] as String?,
@@ -131,6 +166,9 @@ class ApiScheduleRepo implements ScheduleRepo {
         'start_hour': d.startHour,
         'end_hour': d.endHour,
         'mood_id': d.moodId,
+        // Which plan the row belongs to. Null is the recurring plan, which is
+        // also what an older server ignores harmlessly.
+        'week_start': d.weekStart == null ? null : _iso(d.weekStart!),
       };
 
   void dispose() {

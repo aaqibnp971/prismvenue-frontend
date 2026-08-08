@@ -10,6 +10,7 @@ import '../../shared/widgets/prism_icons.dart';
 import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/seg_toggle.dart';
+import '../../shared/widgets/status_pill.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
 import 'daypart_sheet.dart';
@@ -178,7 +179,15 @@ class _WeekPlan extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final palette = Theme.of(context).extension<PrismPalette>()!;
-    final plan = ref.watch(weekPlanProvider).value ?? const <Daypart>[];
+    // Keyed by the week on screen. Before this the provider took no week, so
+    // the arrows moved the header label and nothing else — every week rendered
+    // the same dayparts, and "+ Add" added to the recurring plan regardless.
+    final plan =
+        ref.watch(weekPlanProvider(weekStart)).value ?? const <Daypart>[];
+
+    // A week is entirely a fork or entirely the recurring plan, never a mix, so
+    // the first row answers it for the whole week.
+    final forked = plan.isNotEmpty && plan.first.weekStart != null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -198,9 +207,17 @@ class _WeekPlan extends ConsumerWidget {
             const SizedBox(width: 8),
             _ChevronButton(
                 direction: ChevronDirection.right, onTap: onNextWeek),
+            if (forked) ...[
+              const SizedBox(width: 8),
+              // Says out loud that this week has stopped following the
+              // recurring plan. Without it the divergence is invisible, and the
+              // failure mode is a manager changing "every week" in March and
+              // wondering why one week in the calendar ignored it.
+              const StatusPill(text: 'Just this week', tone: PillTone.amber),
+            ],
             const Spacer(),
             Pressable(
-              onTap: () => showDaypartSheet(context, ref),
+              onTap: () => showDaypartSheet(context, ref, weekStart: weekStart),
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(vertical: 8, horizontal: 14),

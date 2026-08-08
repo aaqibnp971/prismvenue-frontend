@@ -75,22 +75,62 @@ class MockScheduleRepo implements ScheduleRepo {
     _todayController.add(_today);
   }
 
+  /// Forked weeks, keyed by Monday. Absent means the week shows [_plan].
+  final _forks = <DateTime, List<Daypart>>{};
+
+  /// The week currently being watched, so [_emitPlan] emits the right one.
+  DateTime? _watching;
+
+  List<Daypart> _effective(DateTime? week) {
+    final fork = week == null ? null : _forks[week];
+    return List.unmodifiable(fork ?? _plan);
+  }
+
   @override
-  Stream<List<Daypart>> watchWeekPlan() async* {
-    yield List.unmodifiable(_plan);
+  Stream<List<Daypart>> watchWeekPlan(DateTime? weekStart) async* {
+    _watching = weekStart;
+    yield _effective(weekStart);
     yield* _planController.stream;
   }
 
-  void _emitPlan() => _planController.add(List.unmodifiable(_plan));
+  @override
+  Future<void> forkWeek(DateTime weekStart) async {
+    // Idempotent, like the server: a week that already has its own plan is left
+    // alone, so a double tap cannot duplicate it.
+    if (_forks.containsKey(weekStart)) return;
+    _forks[weekStart] = [
+      for (final d in _plan)
+        Daypart(
+          id: 'fork-${_nextId++}',
+          dayIndex: d.dayIndex,
+          startHour: d.startHour,
+          endHour: d.endHour,
+          moodId: d.moodId,
+          weekStart: weekStart,
+        ),
+    ];
+    _emitPlan();
+  }
+
+  /// The list a write should land in — the watched week's fork when it has one,
+  /// otherwise the recurring plan.
+  List<Daypart> get _target {
+    final week = _watching;
+    if (week != null && _forks.containsKey(week)) return _forks[week]!;
+    return _plan;
+  }
+
+  void _emitPlan() => _planController.add(_effective(_watching));
 
   @override
   Future<void> addDaypart(Daypart daypart) async {
-    _plan.add(Daypart(
+    _target.add(Daypart(
       id: 'new-${_nextId++}',
       dayIndex: daypart.dayIndex,
       startHour: daypart.startHour,
       endHour: daypart.endHour,
       moodId: daypart.moodId,
+      weekStart: daypart.weekStart,
     ));
     _emitPlan();
   }
@@ -104,7 +144,7 @@ class MockScheduleRepo implements ScheduleRepo {
 
   @override
   Future<void> deleteDaypart(String id) async {
-    _plan.removeWhere((d) => d.id == id);
+    _target.removeWhere((d) => d.id == id);
     _emitPlan();
   }
 

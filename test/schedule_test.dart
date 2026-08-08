@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prism_venues/data/mock/mock_playback_repo.dart';
+import 'package:prism_venues/data/mock/mock_schedule_repo.dart';
+import 'package:prism_venues/data/models/schedule_entry.dart';
 import 'package:prism_venues/data/repositories/playback_repo.dart';
 import 'package:prism_venues/main.dart';
 import 'package:prism_venues/features/schedule/week_grid.dart';
@@ -191,6 +193,75 @@ void main() {
     expect(find.text('7 – 11 am'), findsWidgets);
   });
 
+  group('H-09 week overrides', () {
+    final monday = DateTime(2026, 8, 10);
+    late MockScheduleRepo repo;
+
+    setUp(() => repo = MockScheduleRepo());
+    tearDown(() => repo.dispose());
+
+    test('an unforked week shows the recurring plan', () async {
+      final recurring = await repo.watchWeekPlan(null).first;
+      final week = await repo.watchWeekPlan(monday).first;
+
+      expect(week.length, recurring.length);
+      // All null week_start: this IS the recurring plan, not a copy of it.
+      expect(week.every((d) => d.weekStart == null), isTrue);
+    });
+
+    test('forking copies the whole plan, not just the edit', () async {
+      final before = await repo.watchWeekPlan(monday).first;
+      await repo.forkWeek(monday);
+      final after = await repo.watchWeekPlan(monday).first;
+
+      // Copy-on-write: the week keeps every daypart it had, now as its own.
+      expect(after.length, before.length);
+      expect(after.every((d) => d.weekStart == monday), isTrue);
+    });
+
+    test('forking is idempotent, so a double tap cannot duplicate a plan',
+        () async {
+      await repo.forkWeek(monday);
+      final once = await repo.watchWeekPlan(monday).first;
+      await repo.forkWeek(monday);
+      final twice = await repo.watchWeekPlan(monday).first;
+
+      expect(twice.length, once.length);
+    });
+
+    test('editing a forked week leaves every other week alone', () async {
+      await repo.forkWeek(monday);
+      final forked = await repo.watchWeekPlan(monday).first;
+      await repo.deleteDaypart(forked.first.id);
+
+      final week = await repo.watchWeekPlan(monday).first;
+      final recurring = await repo.watchWeekPlan(null).first;
+
+      expect(week.length, forked.length - 1);
+      // The whole point: the recurring plan is untouched.
+      expect(recurring.length, forked.length);
+    });
+
+    test('a forked week stops tracking the recurring plan', () async {
+      await repo.forkWeek(monday);
+      final forkedBefore = (await repo.watchWeekPlan(monday).first).length;
+
+      // Add to the recurring plan afterwards.
+      await repo.watchWeekPlan(null).first;
+      await repo.addDaypart(const Daypart(
+        id: '',
+        dayIndex: 3,
+        startHour: 9,
+        endHour: 10,
+        moodId: 'peak',
+      ));
+
+      final forkedAfter = (await repo.watchWeekPlan(monday).first).length;
+      // Divergence is permanent in one direction, and this is the cost the
+      // sheet warns about before anyone pays it.
+      expect(forkedAfter, forkedBefore);
+    });
+  });
 }
 
 /// Bounded settle — chrome may host looping animations.
@@ -198,4 +269,5 @@ Future<void> _settle(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 250));
   await tester.pump(const Duration(milliseconds: 250));
+
 }

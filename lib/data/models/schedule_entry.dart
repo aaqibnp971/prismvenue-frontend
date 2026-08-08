@@ -31,6 +31,7 @@ class Daypart {
     required this.endHour,
     required this.moodId,
     this.serverRangeLabel,
+    this.weekStart,
   });
 
   final String id;
@@ -46,6 +47,13 @@ class Daypart {
 
   /// The label as the server rendered it, when it came from the server.
   final String? serverRangeLabel;
+
+  /// Which plan this belongs to: null is the recurring plan every week shows,
+  /// a Monday is that week's own fork.
+  ///
+  /// Never mixed within one week's list — a week is entirely the recurring plan
+  /// or entirely a fork, because a fork is a complete copy rather than a diff.
+  final DateTime? weekStart;
 
   /// The display string, e.g. "7 – 11 am". Prefers the server's label so the
   /// app and backend never disagree about how a range reads, and falls back to
@@ -68,6 +76,11 @@ class Daypart {
     int? startHour,
     int? endHour,
     String? moodId,
+    DateTime? weekStart,
+    // Explicit, because null is a meaningful value here: it means "the
+    // recurring plan", not "leave it alone". `?? this.weekStart` would make it
+    // impossible to move a row back onto the recurring plan.
+    bool clearWeekStart = false,
   }) =>
       Daypart(
         id: id,
@@ -75,6 +88,8 @@ class Daypart {
         startHour: startHour ?? this.startHour,
         endHour: endHour ?? this.endHour,
         moodId: moodId ?? this.moodId,
+        serverRangeLabel: serverRangeLabel,
+        weekStart: clearWeekStart ? null : (weekStart ?? this.weekStart),
       );
 }
 
