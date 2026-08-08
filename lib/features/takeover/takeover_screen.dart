@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../app/session.dart';
 import '../../app/venue_header.dart';
 import '../../data/repositories/playback_repo.dart';
+import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/primary_button.dart';
 import '../../shared/widgets/prism_top_bar.dart';
@@ -100,9 +101,21 @@ class _TakeoverScreenState extends ConsumerState<TakeoverScreen> {
                     // CTA label not pinned by the README (open_questions).
                     label: 'Start takeover',
                     expanded: true,
-                    onTap: () => ref
-                        .read(playbackRepoProvider)
-                        .startTakeover(handBackAfter: duration),
+                    // S02's primary CTA. Fired-and-dropped, a rejection landed
+                    // in the console as an unhandled async error and nothing
+                    // reached the screen — staff tap, the speakers stay with
+                    // Prism, and nothing says why. `takeover_already_active`
+                    // (409, someone else holds the room) is the case that
+                    // matters most and was the most invisible.
+                    onTap: () async {
+                      try {
+                        await ref
+                            .read(playbackRepoProvider)
+                            .startTakeover(handBackAfter: duration);
+                      } catch (e) {
+                        if (context.mounted) showPrismError(context, e);
+                      }
+                    },
                   ),
                 ],
               ),

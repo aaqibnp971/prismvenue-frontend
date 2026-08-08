@@ -135,8 +135,39 @@ class ApiClient {
     }
   }
 
+  /// Non-null while a refresh is already in flight.
+  ///
+  /// The Floor screen mounts three watchers plus a 5-second poller, so when the
+  /// hour-long access token expires several requests 401 in the same instant.
+  /// Without this guard each of them posted the SAME refresh token, and
+  /// Supabase rotates refresh tokens on use — the first call wins and every
+  /// other one comes back 401, which drove `tokens.clear()` and dropped the
+  /// iPad to the sign-in screen mid-service. That is the exact failure the
+  /// refresh endpoint was added to prevent.
+  ///
+  /// Supabase's reuse-grace window swallowed this most of the time, which made
+  /// it intermittent rather than rare — the worst shape for a bug like this.
+  Future<bool>? _refreshing;
+
   /// Returns true when a fresh access token was stored.
-  Future<bool> _refresh() async {
+  ///
+  /// Concurrent callers share one round trip: whoever arrives while a refresh
+  /// is running awaits the same future, then retries with the token it stored.
+  Future<bool> _refresh() {
+    final inFlight = _refreshing;
+    if (inFlight != null) return inFlight;
+
+    final started = _performRefresh();
+    _refreshing = started;
+    // Cleared only if it is still ours, so a later refresh is never cancelled
+    // by an earlier one finishing.
+    started.whenComplete(() {
+      if (identical(_refreshing, started)) _refreshing = null;
+    });
+    return started;
+  }
+
+  Future<bool> _performRefresh() async {
     final refreshToken = await tokens.readRefreshToken();
     if (refreshToken == null || refreshToken.isEmpty) return false;
 

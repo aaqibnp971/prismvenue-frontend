@@ -29,8 +29,24 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
   final _password = TextEditingController();
   final _confirm = TextEditingController();
 
+  /// Matches the server's own floor (`ResetSavePasswordRequest.password`,
+  /// `min_length=8`). Checking it here turns a 422 into a sentence.
+  static const _minLength = 8;
+
+  @override
+  void initState() {
+    super.initState();
+    // The match hint is live, so it has to rebuild as either field changes.
+    _password.addListener(_onFieldChanged);
+    _confirm.addListener(_onFieldChanged);
+  }
+
+  void _onFieldChanged() => setState(() {});
+
   @override
   void dispose() {
+    _password.removeListener(_onFieldChanged);
+    _confirm.removeListener(_onFieldChanged);
     _password.dispose();
     _confirm.dispose();
     super.dispose();
@@ -38,7 +54,28 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
 
   String? _error;
 
+  bool get _longEnough => _password.text.length >= _minLength;
+
+  /// Requires a non-empty confirm: two blank fields "match", and treating that
+  /// as valid is how an empty password reaches the server.
+  bool get _matches =>
+      _confirm.text.isNotEmpty && _password.text == _confirm.text;
+
+  bool get _valid => _longEnough && _matches;
+
   Future<void> _save() async {
+    // The whole job of the confirm field. Before this it was declared, wired to
+    // a text field, disposed — and never compared to anything, so a mistyped
+    // confirm locked the user out of the account they were trying to recover.
+    if (!_longEnough) {
+      setState(() => _error = 'Use at least $_minLength characters.');
+      return;
+    }
+    if (!_matches) {
+      setState(() => _error = 'Those two passwords do not match.');
+      return;
+    }
+
     final email = ref.read(resetEmailProvider);
     final resetToken = ref.read(resetTokenProvider);
     if (resetToken == null) {
@@ -88,14 +125,24 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
           strongBorder: true,
         ),
         const SizedBox(height: 12),
+        // The frame draws this row already satisfied. Shipped that way it was a
+        // green tick asserting "both match" over two fields that did not — the
+        // one piece of feedback on the screen actively lying. It now tracks the
+        // fields: green only once both conditions actually hold.
         Row(
           children: [
-            PrismCheck(size: 14, color: palette.green),
+            PrismCheck(
+                size: 14,
+                color: _valid ? palette.green : palette.textTertiary),
             const SizedBox(width: 6),
             Flexible(
-              child: Text('At least 8 characters · both match',
-                  style: PrismType.meta.copyWith(
-                      fontWeight: FontWeight.w600, color: palette.green)),
+              child: Text(
+                'At least $_minLength characters · both match',
+                style: PrismType.meta.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: _valid ? palette.green : palette.textSecondary,
+                ),
+              ),
             ),
           ],
         ),

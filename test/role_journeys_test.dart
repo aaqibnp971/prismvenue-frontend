@@ -65,6 +65,16 @@ void main() {
     await settle(tester);
     expect(find.text('Reset your password'), findsOneWidget);
 
+    // The field no longer arrives pre-filled. It used to ship seeded with
+    // priya@marinacafe.com — the frame's sample value as a production default —
+    // so tapping straight through mailed a reset code to a real inbox.
+    await tester.tap(find.text('Send verification code'));
+    await settle(tester);
+    expect(find.text('Enter your email address.'), findsOneWidget);
+    expect(find.text('Enter the code'), findsNothing);
+
+    await tester.enterText(
+        find.byType(TextField).first, 'manager@marinacafe.com');
     await tester.tap(find.text('Send verification code'));
     await settle(tester);
     expect(find.text('Enter the code'), findsOneWidget);
@@ -73,6 +83,25 @@ void main() {
     await settle(tester);
     expect(find.text('Set a new password'), findsOneWidget);
 
+    // The confirm field is actually compared now. It used to be declared,
+    // wired to a field and disposed without ever being read, so a mistyped
+    // confirm locked the user out of the account they were recovering.
+    final passwordFields = find.byType(TextField);
+    await tester.enterText(passwordFields.at(0), 'a-good-password');
+    await tester.enterText(passwordFields.at(1), 'a-good-passwrod');
+    await tester.tap(find.text('Save new password'));
+    await settle(tester);
+    expect(find.text('Those two passwords do not match.'), findsOneWidget);
+
+    // Too short is caught before the server has to say so.
+    await tester.enterText(passwordFields.at(0), 'short');
+    await tester.enterText(passwordFields.at(1), 'short');
+    await tester.tap(find.text('Save new password'));
+    await settle(tester);
+    expect(find.text('Use at least 8 characters.'), findsOneWidget);
+
+    await tester.enterText(passwordFields.at(0), 'a-good-password');
+    await tester.enterText(passwordFields.at(1), 'a-good-password');
     await tester.tap(find.text('Save new password'));
     await settle(tester);
     expect(find.text('Hello!'), findsOneWidget);

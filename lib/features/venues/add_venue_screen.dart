@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/session.dart';
 import '../../data/repositories/venue_repo.dart';
+import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/primary_button.dart';
 import '../../shared/widgets/prism_field.dart';
 import '../../shared/widgets/prism_icons.dart';
@@ -43,16 +44,44 @@ class _AddVenueScreenState extends ConsumerState<AddVenueScreen> {
     }
   }
 
+  String? _error;
+
+  /// Guards the double-submit. Each tap mints a fresh idempotency key, so two
+  /// taps on a slow network are two distinct requests — and a recovered
+  /// connection then creates the venue twice.
+  bool _saving = false;
+
   Future<void> _submit() async {
+    if (_saving) return;
     final name = _name.text.trim();
-    if (name.isEmpty) return; // validation undesigned (§6-B1)
-    await ref.read(venueRepoProvider).addVenue(
-          name: name,
-          address: [_street.text.trim(), _city.text.trim()]
-              .where((s) => s.isNotEmpty)
-              .join(', '),
-          zoneNames: _zones,
-        );
+    // Silently returning made the CTA read as broken rather than as a
+    // validation message.
+    if (name.isEmpty) {
+      setState(() => _error = 'Give the venue a name.');
+      return;
+    }
+
+    setState(() {
+      _error = null;
+      _saving = true;
+    });
+    try {
+      await ref.read(venueRepoProvider).addVenue(
+            name: name,
+            address: [_street.text.trim(), _city.text.trim()]
+                .where((s) => s.isNotEmpty)
+                .join(', '),
+            zoneNames: _zones,
+          );
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = messageFor(e);
+          _saving = false;
+        });
+      }
+      return;
+    }
     if (mounted) context.go('/venues');
   }
 
@@ -180,11 +209,14 @@ class _AddVenueScreenState extends ConsumerState<AddVenueScreen> {
                             ),
                           ],
                         ),
+                        ErrorNote(message: _error),
                         const SizedBox(height: 22),
                         PrimaryButton(
-                            label: 'Add venue',
+                            label: _saving ? 'Adding…' : 'Add venue',
                             expanded: true,
-                            onTap: _submit),
+                            // Null while in flight: the guard in _submit is the
+                            // real protection, this is what makes it visible.
+                            onTap: _saving ? null : _submit),
                       ],
                     ),
                   ),

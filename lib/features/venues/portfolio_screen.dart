@@ -6,6 +6,7 @@ import '../../app/session.dart';
 import '../../data/models/venue.dart';
 import '../../data/models/zone.dart';
 import '../../data/repositories/venue_repo.dart';
+import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/venue_row.dart' as rows;
@@ -135,9 +136,15 @@ class _VenueRow extends ConsumerWidget {
       },
       quickFixLabel: fixableZone != null ? 'Return to Auto' : null,
       onQuickFix: fixableZone != null
-          ? () => ref
-              .read(venueRepoProvider)
-              .returnZoneToAuto(venue.id, fixableZone.id)
+          ? () async {
+              try {
+                await ref
+                    .read(venueRepoProvider)
+                    .returnZoneToAuto(venue.id, fixableZone.id);
+              } catch (e) {
+                if (context.mounted) showPrismError(context, e);
+              }
+            }
           : null,
       onTap: () => context.go('/venues/${venue.id}'),
     );
