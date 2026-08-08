@@ -1,4 +1,4 @@
 {
-  "PRISM_API_BASE_URL": "http://localhost:8000/v1",
+  "PRISM_API_BASE_URL": "https://dgzniqfquuwoelxgozrt.supabase.co/functions/v1/api",
   "PRISM_USE_MOCKS": false
 }

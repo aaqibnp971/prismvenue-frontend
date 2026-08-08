@@ -1,7 +1,16 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- Only the debug and profile manifests declare this by default, so a
          release build reaches every API call as a SocketException. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Stripped from the merged manifest. A dependency declares DUMP, but it
+         is a signature-level permission: it can only be granted to apps signed
+         with the platform key, so we can never hold it. Left in, it does
+         nothing except appear in the Play listing's permission list, where it
+         reads as an app asking to dump system state. -->
+    <uses-permission android:name="android.permission.DUMP" tools:node="remove"/>
+
     <application
         android:label="prism_venues"
         android:name="${applicationName}"
