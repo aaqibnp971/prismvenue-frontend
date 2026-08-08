@@ -36,6 +36,29 @@ class _ResetCodeScreenState extends ConsumerState<ResetCodeScreen> {
 
   String? _error;
 
+  /// Doubles as the busy guard and the label state, so a slow network cannot
+  /// queue three codes.
+  var _resending = false;
+
+  /// Confirmation for a resend, cleared when the code is edited.
+  String? _resent;
+
+  Future<void> _resend(String email) async {
+    setState(() {
+      _resending = true;
+      _error = null;
+      _resent = null;
+    });
+    try {
+      await ref.read(authRepoProvider).sendResetCode(email);
+      if (mounted) setState(() => _resent = 'A new code is on its way.');
+    } catch (e) {
+      if (mounted) setState(() => _error = messageFor(e));
+    } finally {
+      if (mounted) setState(() => _resending = false);
+    }
+  }
+
   Future<void> _verify() async {
     final email = ref.read(resetEmailProvider);
     setState(() => _error = null);
@@ -102,18 +125,29 @@ class _ResetCodeScreenState extends ConsumerState<ResetCodeScreen> {
           ),
         ),
         ErrorNote(message: _error),
+        // Success needs a signal too, not just failure — the whole complaint
+        // was that a resend looked exactly like doing nothing.
+        if (_resent != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(_resent!,
+                style: PrismType.meta.copyWith(
+                    fontWeight: FontWeight.w600, color: palette.green)),
+          ),
         const SizedBox(height: 22),
         PrimaryButton(label: 'Verify', auth: true, expanded: true, onTap: _verify),
         const SizedBox(height: 18),
         AuthFooterLink(
-          onTap: () =>
-              ref.read(authRepoProvider).sendResetCode(email),
+          // Was an unawaited call: success and failure looked identical --
+          // nothing moved either way -- so users tapped it repeatedly and had
+          // no way to know whether a second code was coming.
+          onTap: _resending ? null : () => _resend(email),
           child: Text.rich(
             TextSpan(
               text: "Didn't get it? ",
               children: [
                 TextSpan(
-                    text: 'Resend code',
+                    text: _resending ? 'Sending…' : 'Resend code',
                     style: PrismType.bodySm.copyWith(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,

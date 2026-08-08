@@ -130,10 +130,15 @@ class VenueScreen extends ConsumerWidget {
                               }
                             },
                             // §4 edge: venue → zone-detail (S05-5).
-                            onTap: zone.status == ZoneStatus.offSchedule
-                                ? null
-                                : () =>
-                                    context.go('/venues/zones/${zone.id}'),
+                            //
+                            // Off-schedule rows used to be inert, on the
+                            // reasoning that they carry a quick-fix instead. It
+                            // inverted the screen's purpose: the rows a manager
+                            // most wants to inspect were the only ones they
+                            // could not open, so you had to fix a zone before
+                            // you could look at why it needed fixing.
+                            onTap: () =>
+                                context.go('/venues/zones/${zone.id}'),
                           ),
                           const SizedBox(height: 8),
                         ],

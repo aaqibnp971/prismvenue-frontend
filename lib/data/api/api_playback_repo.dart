@@ -209,6 +209,11 @@ class ApiPlaybackRepo implements PlaybackRepo {
     final token = await _tokens.readAccessToken();
     if (zoneId == null || token == null) return _startPolling();
 
+    // Nobody is watching any more. Leaving before _connect() finished meant
+    // _stopStreaming() found _events still null, so the connection it could not
+    // see was adopted afterwards and held open with zero listeners.
+    if (_listeners <= 0) return;
+
     // Belt and braces: never leave a previous stream holding a socket.
     await _events?.cancel();
     _events = null;
@@ -224,6 +229,11 @@ class ApiPlaybackRepo implements PlaybackRepo {
 
       final response = await _sse.send(request);
       if (response.statusCode != 200) return _startPolling();
+      // Same race, on the far side of the await.
+      if (_listeners <= 0) {
+        unawaited(response.stream.drain<void>().catchError((_) {}));
+        return;
+      }
 
       _events = response.stream
           .transform(utf8.decoder)
@@ -267,9 +277,23 @@ class ApiPlaybackRepo implements PlaybackRepo {
 
   /// Fallback when SSE is unavailable — a proxy that buffers it, an older
   /// deployment, a dropped connection. Slower, but never silent.
+  /// Consecutive polls since the last attempt to get the stream back.
+  int _pollsSinceRetry = 0;
+
+  /// How many 5s polls to serve before trying the stream again.
+  ///
+  /// Once _startPolling set _pollFallback, _ensureStreaming returned early
+  /// forever: a single dropped frame degraded the screen to 5-second polling
+  /// for as long as the user stayed on it, and recovery only happened by
+  /// navigating away and back. Retrying on a timer costs one request a minute
+  /// against a backend that has genuinely lost SSE, and restores push within a
+  /// minute against one that has recovered.
+  static const _pollsBeforeStreamRetry = 12; // ~60s
+
   void _startPolling() {
     _events?.cancel();
     _events = null;
+    _pollsSinceRetry = 0;
     _pollFallback ??= Timer.periodic(const Duration(seconds: 5), (_) async {
       if (_listeners <= 0) return;
       try {
@@ -279,6 +303,16 @@ class ApiPlaybackRepo implements PlaybackRepo {
       } catch (_) {
         // Keep polling; a transient failure is not a reason to stop.
       }
+
+      if (++_pollsSinceRetry < _pollsBeforeStreamRetry) return;
+      _pollsSinceRetry = 0;
+      // Try the stream again. _connect() falls straight back to polling if it
+      // is still unavailable, and _pollFallback is cleared first so
+      // _ensureStreaming's early return does not block the attempt.
+      if (_connecting != null || _events != null) return;
+      _pollFallback?.cancel();
+      _pollFallback = null;
+      _ensureStreaming();
     });
   }
 

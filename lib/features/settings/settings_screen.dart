@@ -291,6 +291,24 @@ Future<int?> _showAnchoredDropdown(
       right = 15 + 8; // screen padding + row inset
     }
   }
+  // Clamp to the screen. Anchoring took the row's global offset with no bounds
+  // check, and the Alerts rows sit low on the Settings list -- on a short window
+  // their menus rendered partly off-screen, with the options you most need to
+  // reach being the ones past the edge.
+  //
+  // Measured against the anchor's own view rather than a MediaQuery from the
+  // dialog, which is not built yet.
+  final view = View.of(anchorContext);
+  final screenHeight = view.physicalSize.height / view.devicePixelRatio;
+  // PrismDropdownMenu is 44px per row plus 8px of padding; near enough to keep
+  // the whole menu on screen without reaching into its internals.
+  final menuHeight = options.length * 44.0 + 8;
+  const bottomInset = 12.0;
+  if (top + menuHeight > screenHeight - bottomInset) {
+    // Flip above the row when there is no room below.
+    top = (top - menuHeight - 8 - 4).clamp(PrismTopBar.height + 6.0, top);
+  }
+
   return showDialog<int>(
     context: anchorContext,
     barrierColor: Colors.transparent,

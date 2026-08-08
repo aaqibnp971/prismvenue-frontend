@@ -14,11 +14,27 @@ class Pressable extends StatefulWidget {
     this.onTap,
     this.effect = PressEffect.scale,
     this.borderRadius = 12,
+    this.semanticLabel,
+    this.minTapTarget = 44,
   });
 
   final Widget child;
   final VoidCallback? onTap;
   final PressEffect effect;
+
+  /// Spoken label, when the child's own text is not the whole story — an
+  /// icon-only control, or a row whose meaning depends on nearby text.
+  ///
+  /// Null is fine for anything whose visible text already reads correctly:
+  /// Semantics merges the descendants, so a labelled button announces itself.
+  final String? semanticLabel;
+
+  /// The floor for the touch target, independent of how the child paints.
+  ///
+  /// 44 is the platform minimum on both iOS and Android, and several controls
+  /// sat well under it — the schedule's date label and its 28px chevrons among
+  /// them. It expands the hit area only; nothing moves on screen.
+  final double minTapTarget;
 
   /// Flash overlay corner radius — match the row's own radius.
   final double borderRadius;
@@ -69,13 +85,29 @@ class _PressableState extends State<Pressable> {
         ),
     };
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    // Every control in the app was a bare GestureDetector: no role, no label,
+    // nothing operable by assistive tech, and VoiceOver announcing raw text.
+    // Wrapping the shared press widget gets the button role onto most of them
+    // at once, rather than one screen at a time.
+    return Semantics(
+      button: true,
+      enabled: active,
+      label: widget.semanticLabel,
       onTap: widget.onTap,
-      onTapDown: active ? (_) => _set(true) : null,
-      onTapUp: active ? (_) => _set(false) : null,
-      onTapCancel: active ? () => _set(false) : null,
-      child: content,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        onTapDown: active ? (_) => _set(true) : null,
+        onTapUp: active ? (_) => _set(false) : null,
+        onTapCancel: active ? () => _set(false) : null,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minWidth: widget.minTapTarget,
+            minHeight: widget.minTapTarget,
+          ),
+          child: Center(widthFactor: 1, heightFactor: 1, child: content),
+        ),
+      ),
     );
   }
 }

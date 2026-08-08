@@ -182,6 +182,22 @@ void main() {
     expect(find.text('Open floor'), findsNothing);
   });
 
+
+  testWidgets('M-04 an off-schedule zone can still be opened', (tester) async {
+    await pumpPortfolio(tester);
+    await tester.tap(find.text('Marina Café'));
+    await _settle(tester);
+
+    // Terrace is the seeded off-schedule zone. Its row used to be inert, so the
+    // rows a manager most wants to inspect were the only ones they could not
+    // open -- you had to fix a zone before you could look at why it needed
+    // fixing.
+    await tester.tap(find.text('Terrace'));
+    await _settle(tester);
+
+    expect(find.text('Zone name'), findsOneWidget);
+  });
+
   testWidgets('S04-3/4: add venue with a zone from the sheet',
       (tester) async {
     await pumpPortfolio(tester);

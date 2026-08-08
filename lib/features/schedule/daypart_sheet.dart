@@ -9,6 +9,7 @@ import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/seg_toggle.dart';
 import '../settings/widgets/time_field.dart';
+import 'confirm_delete_daypart_dialog.dart';
 import '../../theme/moods.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
@@ -286,9 +287,22 @@ class _DaypartSheetState extends State<_DaypartSheet> {
         if (editing) ...[
           const SizedBox(height: 16),
           GestureDetector(
-            onTap: () =>
-                Navigator.of(context).pop(_Delete(widget.existing!.id,
-                    justThisWeek: _justThisWeek)),
+            // Confirmed, like "Remove zone". A daypart is not recoverable from
+            // the UI -- no undo, no history -- and the sheet is opened by
+            // tapping a block in a grid, so picking the wrong one is exactly
+            // the mistake worth catching.
+            onTap: () async {
+              final confirmed = await showConfirmDeleteDaypartDialog(
+                context,
+                dayName: DayChips.labels[_day],
+                rangeLabel: Daypart.formatRange(_start, _end),
+                moodName: moodById(_moodId).name,
+              );
+              if (confirmed != true) return;
+              if (!context.mounted) return;
+              Navigator.of(context).pop(_Delete(widget.existing!.id,
+                  justThisWeek: _justThisWeek));
+            },
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 10),

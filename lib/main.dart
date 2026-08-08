@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -82,6 +84,25 @@ ProviderContainer buildPrismContainer({ThemeMode? initialTheme}) {
 }
 
 Future<void> main() async {
+  // Nothing installed either of these, so every unhandled exception -- and B-04
+  // produced nine kinds -- died in a console nobody is reading. A venue iPad has
+  // no console at all.
+  //
+  // Logged, not swallowed: this is a seam for a real crash reporter, not a
+  // substitute for one. Until one is wired in, at least the failure has a name
+  // and a stack rather than being silently lost.
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('prism: uncaught framework error: ${details.exception}');
+  };
+
+  runZonedGuarded(_boot, (error, stack) {
+    debugPrint('prism: uncaught async error: $error');
+    debugPrintStack(stackTrace: stack);
+  });
+}
+
+Future<void> _boot() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Read before the first frame so a light-theme venue never sees dark flash

@@ -7,6 +7,7 @@ import 'package:prism_venues/data/models/schedule_entry.dart';
 import 'package:prism_venues/data/repositories/playback_repo.dart';
 import 'package:prism_venues/main.dart';
 import 'package:prism_venues/features/schedule/week_grid.dart';
+import 'package:prism_venues/shared/widgets/confirm_dialog.dart';
 import 'package:prism_venues/shared/widgets/prism_bottom_sheet.dart';
 
 /// §2 S03 Schedule: self-drive ⇄ custom, week grid, add/edit/delete
@@ -70,7 +71,27 @@ void main() {
     expect(find.text('Edit daypart'), findsOneWidget);
     expect(find.text('Delete daypart'), findsOneWidget);
 
+    // M-03: confirmed now, like "Remove zone". A daypart is not recoverable
+    // from the UI, and the sheet is opened by tapping a block in a grid, so
+    // picking the wrong one is exactly the mistake worth catching.
     await tester.tap(find.text('Delete daypart'));
+    await _settle(tester);
+    expect(find.text('Delete this daypart?'), findsOneWidget);
+
+    // Cancel keeps it. Scoped to the dialog — the sheet has a Cancel too.
+    await tester.tap(find.descendant(
+      of: find.byType(ConfirmDialog),
+      matching: find.text('Cancel'),
+    ));
+    await _settle(tester);
+    expect(find.text('Delete this daypart?'), findsNothing);
+
+    await tester.tap(find.text('Delete daypart').first);
+    await _settle(tester);
+    await tester.tap(find.descendant(
+      of: find.byType(ConfirmDialog),
+      matching: find.text('Delete daypart'),
+    ));
     await _settle(tester);
     expect(find.text('Morning calm'), findsNWidgets(6));
   });

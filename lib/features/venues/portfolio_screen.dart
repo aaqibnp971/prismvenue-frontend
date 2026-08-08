@@ -143,8 +143,13 @@ class _VenueRow extends ConsumerWidget {
         : '$zoneCount zone${zoneCount == 1 ? '' : 's'} · '
             '${moodById(venue.zones.first.moodId).name}';
 
+    // The WORST zone, not merely the first non-auto one, so the sub line
+    // describes the same zone the row's status dot is coloured for.
     final problemZone =
-        venue.zones.where((z) => z.status != ZoneStatus.auto).firstOrNull;
+        venue.zones.where((z) => z.status == ZoneStatus.offline).firstOrNull ??
+            venue.zones
+                .where((z) => z.status == ZoneStatus.offSchedule)
+                .firstOrNull;
     final sub = switch (problemZone?.status) {
       ZoneStatus.offline =>
         '${problemZone!.name} · ${problemZone.statusDetail ?? 'Offline'}',
@@ -153,9 +158,21 @@ class _VenueRow extends ConsumerWidget {
       _ => quietSub,
     };
 
-    final fixableZone = venue.zones
-        .where((z) => z.status == ZoneStatus.offSchedule)
-        .firstOrNull;
+    // Only ever the zone the row just named.
+    //
+    // The sub took the first NON-AUTO zone and the button took the first
+    // OFF-SCHEDULE one, which are not the same zone: with an offline Terrace
+    // and an off-schedule Main floor the row read "Terrace · Offline" beside a
+    // "Return to Auto" button that silently fixed Main floor. A control that
+    // acts on something other than what the row describes is worse than no
+    // control.
+    //
+    // So a venue whose worst zone is offline shows no quick-fix -- which is
+    // already the rule for offline rows elsewhere, since there is nothing to
+    // fix remotely. Its off-schedule zones are still one tap away through the
+    // venue.
+    final fixableZone =
+        problemZone?.status == ZoneStatus.offSchedule ? problemZone : null;
 
     return rows.VenueRow(
       name: venue.name,
