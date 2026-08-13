@@ -38,8 +38,10 @@ abstract class ScheduleRepo {
   Future<void> deleteDaypart(String id);
 }
 
+/// Zone-scoped like the API repo — see [playbackRepoProvider] for why the
+/// resolver is a closure rather than a captured value.
 final scheduleRepoProvider = Provider<ScheduleRepo>((ref) {
-  final repo = MockScheduleRepo();
+  final repo = MockScheduleRepo(zoneId: () => ref.read(currentZoneIdProvider));
   ref.onDispose(repo.dispose);
   return repo;
 });

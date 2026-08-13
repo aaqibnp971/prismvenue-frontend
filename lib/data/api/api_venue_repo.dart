@@ -62,6 +62,12 @@ class ApiVenueRepo implements VenueRepo {
   }
 
   @override
+  Future<void> addZone(String venueId, String name) async {
+    await _client.post('/venues/$venueId/zones', body: {'name': name});
+    await _refreshAll();
+  }
+
+  @override
   Future<void> renameZone(String zoneId, String name) async {
     await _client.patch('/zones/$zoneId', body: {'name': name});
     await _refreshAll();

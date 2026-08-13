@@ -131,6 +131,35 @@ class MockVenueRepo implements VenueRepo {
   }
 
   @override
+  Future<void> addZone(String venueId, String name) async {
+    final i = _venues.indexWhere((v) => v.id == venueId);
+    if (i == -1) return;
+    // Mirrors the server's unique (venue_id, name), like renameZone — the mock
+    // has to fail the way the API fails or the screen's error path is never
+    // really exercised.
+    if (_venues[i].zones.any((z) => z.name == name)) {
+      throw const ApiException(
+        statusCode: 409,
+        code: 'zone_name_taken',
+        message: 'Another zone in this venue already uses that name.',
+      );
+    }
+    _venues[i] = _venues[i].copyWith(zones: [
+      ..._venues[i].zones,
+      Zone(
+        id: '$venueId-z${_nextId++}',
+        name: name,
+        // A fresh zone is on auto playing the same default the server writes
+        // into zone_state, so the mock and the API agree on what a new room
+        // looks like before anything reports.
+        status: ZoneStatus.auto,
+        moodId: 'daytime-flow',
+      ),
+    ]);
+    _emit();
+  }
+
+  @override
   Future<void> renameZone(String zoneId, String name) async {
     for (var i = 0; i < _venues.length; i++) {
       final venue = _venues[i];

@@ -51,3 +51,7 @@ prism.config.json
 
 # Backend credentials must never live in this repo.
 .env
+
+# Staged distributable bundles produced by packaging/build_windows_release.ps1.
+# Build output, not source — 80MB of it.
+/dist/

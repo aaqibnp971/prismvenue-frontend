@@ -55,8 +55,13 @@ abstract class PlaybackRepo {
   Future<void> endTakeover();
 }
 
+/// The mock is handed the same zone resolver `ApiScope` gives the API repo, so
+/// on mocks two rooms hold two moods exactly as they do against the backend.
+/// `ref.read` inside the closure rather than `ref.watch` at build time: the
+/// scope is resolved per call, so changing the session's zone takes effect
+/// without rebuilding the repository (and without dropping its state).
 final playbackRepoProvider = Provider<PlaybackRepo>((ref) {
-  final repo = MockPlaybackRepo();
+  final repo = MockPlaybackRepo(zoneId: () => ref.read(currentZoneIdProvider));
   ref.onDispose(repo.dispose);
   return repo;
 });

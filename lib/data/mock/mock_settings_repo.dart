@@ -7,13 +7,39 @@ import '../repositories/settings_repo.dart';
 /// hours on, Nudge ±10%, Gentle, Managers + floor, default hours 7am–11pm
 /// with the S05-10 Fri & Sat 7am–1am exception. Alert defaults are not
 /// pinned (open_questions).
+///
+/// Guardrails are **per zone** and open hours are **per venue**, matching the
+/// schema (`zone_guardrails.zone_id`, `open_hours.venue_id`) — so two rooms
+/// hold two volume bands, while both rooms of one venue share its opening
+/// times. Shared state here was invisible until "Open floor" started working
+/// on every zone; after that it made every venue look like it had the same
+/// settings.
 class MockSettingsRepo implements SettingsRepo {
-  var _guardrails = const Guardrails();
-  var _hours = const OpenHours(
+  MockSettingsRepo({String? Function()? zoneId, String? Function()? venueId})
+      : _zoneId = zoneId ?? (() => null),
+        _venueId = venueId ?? (() => null);
+
+  /// Resolved at call time, exactly as `ApiScope` does it. Both default to a
+  /// resolver returning null, which collapses everything into one bucket — the
+  /// pre-scope behaviour, and what a test constructing this directly gets.
+  final String? Function() _zoneId;
+  final String? Function() _venueId;
+
+  final _guardrailsByZone = <String?, Guardrails>{};
+
+  Guardrails get _guardrails =>
+      _guardrailsByZone[_zoneId()] ?? const Guardrails();
+
+  static const _seedHours = OpenHours(
     exceptions: [
       HoursException(id: 'e-seed', days: {4, 5}, openHour: 7, closeHour: 1),
     ],
   );
+
+  final _hoursByVenue = <String?, OpenHours>{};
+
+  OpenHours get _hours => _hoursByVenue[_venueId()] ?? _seedHours;
+
   var _nextExceptionId = 0;
 
   final _guardrailsController = StreamController<Guardrails>.broadcast();
@@ -30,7 +56,7 @@ class MockSettingsRepo implements SettingsRepo {
 
   @override
   Future<void> updateGuardrails(Guardrails next) async {
-    _guardrails = next;
+    _guardrailsByZone[_zoneId()] = next;
     _guardrailsController.add(next);
   }
 
@@ -41,7 +67,7 @@ class MockSettingsRepo implements SettingsRepo {
   }
 
   void _emitHours(OpenHours next) {
-    _hours = next;
+    _hoursByVenue[_venueId()] = next;
     _hoursController.add(next);
   }
 

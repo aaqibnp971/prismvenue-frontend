@@ -33,8 +33,13 @@ abstract class SettingsRepo {
   Future<void> deleteException(String id);
 }
 
+/// Guardrails follow the zone, open hours follow the venue — the same split
+/// `ApiScope` gives the API repo, and the same split the schema has.
 final settingsRepoProvider = Provider<SettingsRepo>((ref) {
-  final repo = MockSettingsRepo();
+  final repo = MockSettingsRepo(
+    zoneId: () => ref.read(currentZoneIdProvider),
+    venueId: () => ref.read(currentVenueIdProvider),
+  );
   ref.onDispose(repo.dispose);
   return repo;
 });
