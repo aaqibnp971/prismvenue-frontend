@@ -14,6 +14,7 @@ library;
 import 'dart:async';
 
 import 'prism_engine.dart';
+import 'weather_influence.dart';
 
 class PlatformPrismEngine implements PrismEngine {
   final _status = StreamController<EngineStatus>.broadcast();
@@ -34,6 +35,9 @@ class PlatformPrismEngine implements PrismEngine {
 
   @override
   Future<void> setMood(String moodId, {Duration? transition, bool? alignToBar}) async {}
+
+  @override
+  Future<void> applyInfluence(PsvNudge nudge) async {}
 
   @override
   Future<void> silence() async {}

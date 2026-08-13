@@ -22,9 +22,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/models/guardrails.dart';
 import '../data/models/playback_state.dart';
 import '../data/models/takeover_state.dart';
+import '../data/models/weather.dart';
 import '../data/repositories/playback_repo.dart';
 import '../data/repositories/settings_repo.dart';
+import '../data/repositories/weather_repo.dart';
 import 'prism_engine.dart';
+import 'weather_influence.dart';
 
 /// The engine instance. Created once and disposed with the container.
 final prismEngineProvider = Provider<PrismEngine>((ref) {
@@ -74,7 +77,30 @@ class EngineController {
         fireImmediately: true,
       ),
     );
+    // Weather is a state, like the other two, so it is followed the same way
+    // rather than being fetched at the point of a mood change. That matters:
+    // the sky moves while the mood stands still, and a room left on Peak all
+    // evening should still darken as the light goes.
+    //
+    // `weatherProvider` is scoped to the session's venue, so "Open floor" on a
+    // room in another city repoints this along with everything else.
+    _subscriptions.add(
+      _ref.listen<AsyncValue<WeatherReading?>>(
+        weatherProvider,
+        (_, next) => _onWeather(next.value),
+        fireImmediately: true,
+      ),
+    );
   }
+
+  /// Folds the venue's sky into the pinned PSV.
+  ///
+  /// A null reading — no address, no network, an API that is down — maps to
+  /// [PsvNudge.none], which is bit-identical to pinning the preset alone. So
+  /// losing the weather returns the room to its plain mood instead of freezing
+  /// it on the last sky that was seen.
+  Future<void> _onWeather(WeatherReading? reading) =>
+      _engine.applyInfluence(nudgeFor(reading));
 
   Future<void> _onPlayback(PlaybackState? state) async {
     if (state == null) return;

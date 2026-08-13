@@ -18,6 +18,7 @@ library;
 
 import 'prism_engine_stub.dart'
     if (dart.library.ffi) 'prism_engine_native.dart' as impl;
+import 'weather_influence.dart';
 
 /// How the engine reports itself to the UI, so "no sound" is never a mystery.
 enum EngineStatus {
@@ -76,6 +77,25 @@ abstract class PrismEngine {
   /// class happened to run — a divergence nothing would catch. Null means "the
   /// engine's own default", resolved in one place.
   Future<void> setMood(String moodId, {Duration? transition, bool? alignToBar});
+
+  /// Folds an environmental signal into the pinned mood.
+  ///
+  /// The room keeps playing whatever mood it is playing; this only changes how
+  /// that mood sounds — see `weather_influence.dart` for what the numbers mean
+  /// and why they are as small as they are.
+  ///
+  /// Separate from [setMood] because the two change independently and at very
+  /// different rates. Weather moves on a 15-minute timer while the mood stays
+  /// put, and routing it through [setMood] would either be ignored (that method
+  /// returns early when the mood has not changed) or trigger a pointless scene
+  /// crossfade — up to 60 seconds of the room easing into the mood it is
+  /// already playing.
+  ///
+  /// Applied to the current mood immediately if one is playing, and remembered
+  /// for the next one either way. Idempotent, and cheap: it publishes a PSV,
+  /// which the engine ramps into like any other change. Nothing steps and no
+  /// audio is reloaded.
+  Future<void> applyInfluence(PsvNudge nudge);
 
   /// Stops rendering so someone else can own the speakers. This is what
   /// Takeover calls, and what Pause calls. Idempotent.

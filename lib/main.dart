@@ -12,12 +12,14 @@ import 'data/api/api_playback_repo.dart';
 import 'data/api/api_schedule_repo.dart';
 import 'data/api/api_settings_repo.dart';
 import 'data/api/api_venue_repo.dart';
+import 'data/api/open_meteo_weather_repo.dart';
 import 'data/api/providers.dart';
 import 'data/repositories/auth_repo.dart';
 import 'data/repositories/playback_repo.dart';
 import 'data/repositories/schedule_repo.dart';
 import 'data/repositories/settings_repo.dart';
 import 'data/repositories/venue_repo.dart';
+import 'data/repositories/weather_repo.dart';
 import 'engine/engine_controller.dart';
 import 'theme/palette.dart';
 import 'theme/theme.dart';
@@ -32,18 +34,24 @@ import 'theme/theme.dart';
 /// `--dart-define=PRISM_USE_MOCKS=true` returns an empty list, running the app
 /// exactly as it ran before the backend existed. Useful for design review and
 /// for reproducing the widget tests by hand.
-ProviderContainer buildPrismContainer({ThemeMode? initialTheme}) {
-  // The persisted theme is injected rather than read inside the notifier:
-  // Notifier.build() is synchronous, so loading it there would show dark for a
-  // frame and then correct itself on every launch.
-  final themeOverride = [
+ProviderContainer buildPrismContainer({
+  ThemeMode? initialTheme,
+  StoredOperatedZone? storedZone,
+}) {
+  // Both of these are injected rather than read inside their notifiers:
+  // Notifier.build() is synchronous, so loading them there would show the
+  // default for a frame and then correct itself on every launch — a flash of
+  // the wrong theme, and of the wrong venue's name.
+  final bootOverrides = [
     if (initialTheme != null)
       initialThemeModeProvider.overrideWithValue(initialTheme),
+    if (storedZone != null)
+      storedOperatedZoneProvider.overrideWithValue(storedZone),
   ];
 
-  if (Env.useMocks) return ProviderContainer(overrides: themeOverride);
+  if (Env.useMocks) return ProviderContainer(overrides: bootOverrides);
   return ProviderContainer(overrides: [
-    ...themeOverride,
+    ...bootOverrides,
     authRepoProvider.overrideWith(
       (ref) => ApiAuthRepo(
         ref.watch(apiClientProvider),
@@ -80,6 +88,15 @@ ProviderContainer buildPrismContainer({ThemeMode? initialTheme}) {
       ref.onDispose(repo.dispose);
       return repo;
     }),
+    // The one repository that talks to something other than our own backend.
+    // Deliberately not given `apiClientProvider`: that attaches the Supabase
+    // bearer token to every request, and sending a session token to
+    // open-meteo.com would be a straightforward credential leak.
+    weatherRepoProvider.overrideWith((ref) {
+      final repo = OpenMeteoWeatherRepo();
+      ref.onDispose(repo.dispose);
+      return repo;
+    }),
   ]);
 }
 
@@ -106,8 +123,13 @@ Future<void> _boot() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Read before the first frame so a light-theme venue never sees dark flash
-  // past. Cheap and local, unlike the session restore below.
-  final container = buildPrismContainer(initialTheme: await readStoredThemeMode());
+  // past, and so a returning manager lands on the room they left the app on
+  // rather than watching it switch a frame later. Both are cheap and local,
+  // unlike the session restore below.
+  final container = buildPrismContainer(
+    initialTheme: await readStoredThemeMode(),
+    storedZone: await readStoredOperatedZone(),
+  );
 
   // Rehydrate before the first frame so the router sees the final session and
   // a returning user never sees the sign-in screen flash past.

@@ -6,6 +6,7 @@ import '../../app/session.dart';
 import '../../app/venue_header.dart';
 import '../../data/repositories/playback_repo.dart';
 import '../../data/repositories/schedule_repo.dart';
+import '../../data/repositories/weather_repo.dart';
 import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/prism_top_bar.dart';
@@ -73,6 +74,12 @@ class FloorScreen extends ConsumerWidget {
                     children: [
                       HeroCard(
                         state: state,
+                        // The venue's sky, which is also what is colouring the
+                        // sound right now — see engine/weather_influence.dart.
+                        // Only reaches the widget while the server's own
+                        // context line is empty, which is always, today.
+                        contextFallback:
+                            ref.watch(weatherProvider).value?.label,
                         // Null, not 62. That fallback was a frame sample value
                         // rendered as live telemetry, so a zone whose sensor
                         // had never reported showed a confident 62%.
