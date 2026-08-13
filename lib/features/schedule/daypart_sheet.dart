@@ -7,7 +7,9 @@ import '../../shared/widgets/day_chips.dart';
 import '../../shared/widgets/prism_bottom_sheet.dart';
 import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/prism_top_bar.dart';
+import '../../shared/widgets/seg_toggle.dart';
 import '../settings/widgets/time_field.dart';
+import 'confirm_delete_daypart_dialog.dart';
 import '../../theme/moods.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
@@ -16,12 +18,27 @@ import '../../theme/typography.dart';
 /// same controls, plus Delete". BottomSheet: day chips row, time fields,
 /// mood picker grid (6 tiles small), CTA; edit adds a full-width
 /// "Delete daypart" `red` text button at the bottom.
-Future<void> showDaypartSheet(BuildContext context, WidgetRef ref,
-    {Daypart? existing}) async {
+/// [weekStart] is the Monday of the week on screen, and [alreadyForked] says
+/// whether that week has its own plan already.
+///
+/// Together they decide whether the sheet has to ask "every week or just this
+/// one": a week that has already diverged has nothing to ask — every edit
+/// stays in that week — and a week still on the recurring plan does, because
+/// forking is permanent in one direction and must never happen by accident.
+Future<void> showDaypartSheet(
+  BuildContext context,
+  WidgetRef ref, {
+  Daypart? existing,
+  DateTime? weekStart,
+  bool alreadyForked = false,
+}) async {
   final result = await showPrismSheet<_DaypartResult>(
     context,
     topBarHeight: PrismTopBar.height,
-    sheet: _DaypartSheet(existing: existing),
+    sheet: _DaypartSheet(
+      existing: existing,
+      canChooseScope: weekStart != null && !alreadyForked,
+    ),
   );
   if (result == null) return;
   final repo = ref.read(scheduleRepoProvider);
@@ -32,13 +49,29 @@ Future<void> showDaypartSheet(BuildContext context, WidgetRef ref,
   // screen's mutations.
   try {
     switch (result) {
-      case _Save(:final daypart):
-        if (existing == null) {
-          await repo.addDaypart(daypart);
-        } else {
-          await repo.updateDaypart(daypart);
+      case _Save(:final daypart, :final justThisWeek):
+        // Fork FIRST, then write. Forking copies the recurring plan into the
+        // week and gives every row a new id, so an edit applied beforehand
+        // would either be copied into the fork twice or be aimed at an id the
+        // week no longer contains.
+        if (justThisWeek && weekStart != null) {
+          await repo.forkWeek(weekStart);
         }
-      case _Delete(:final id):
+        final scopeToWeek = justThisWeek || alreadyForked;
+        final scoped = scopeToWeek
+            ? daypart.copyWith(weekStart: weekStart)
+            : daypart.copyWith(clearWeekStart: true);
+        if (existing == null) {
+          await repo.addDaypart(scoped);
+        } else {
+          await repo.updateDaypart(scoped);
+        }
+      case _Delete(:final id, justThisWeek: final deleteJustThisWeek):
+        // Same ordering rule as a save: fork first, or the id being deleted
+        // belongs to the recurring plan and the deletion would hit every week.
+        if (deleteJustThisWeek && weekStart != null) {
+          await repo.forkWeek(weekStart);
+        }
         await repo.deleteDaypart(id);
     }
   } catch (e) {
@@ -49,19 +82,31 @@ Future<void> showDaypartSheet(BuildContext context, WidgetRef ref,
 sealed class _DaypartResult {}
 
 class _Save extends _DaypartResult {
-  _Save(this.daypart);
+  _Save(this.daypart, {this.justThisWeek = false});
   final Daypart daypart;
+
+  /// True when the manager chose "Just this week" on a week that had not
+  /// diverged yet — the only thing that ever creates a fork.
+  final bool justThisWeek;
 }
 
 class _Delete extends _DaypartResult {
-  _Delete(this.id);
+  _Delete(this.id, {this.justThisWeek = false});
   final String id;
+  final bool justThisWeek;
 }
 
 class _DaypartSheet extends StatefulWidget {
-  const _DaypartSheet({this.existing});
+  const _DaypartSheet({this.existing, this.canChooseScope = false});
 
   final Daypart? existing;
+
+  /// Whether to offer "Every week / Just this week".
+  ///
+  /// False once the week has already forked: every edit stays in that week and
+  /// there is nothing left to decide, so asking again would imply the choice
+  /// still meant something.
+  final bool canChooseScope;
 
   @override
   State<_DaypartSheet> createState() => _DaypartSheetState();
@@ -77,6 +122,10 @@ class _DaypartSheetState extends State<_DaypartSheet> {
   // gets real times, without which it cannot compute what plays when.
   late int _start = widget.existing?.startHour ?? 18;
   late int _end = widget.existing?.endHour ?? 21;
+
+  /// Defaults to "Every week". The recurring plan is the normal case, and the
+  /// destructive-ish option should be the one you pick on purpose.
+  var _justThisWeek = false;
 
   /// Why the range is unusable, or null when it is fine.
   ///
@@ -104,13 +153,16 @@ class _DaypartSheetState extends State<_DaypartSheet> {
       // neither shape has a meaning the scheduler can act on.
       onPrimary: _rangeError != null
           ? null
-          : () => Navigator.of(context).pop(_Save(Daypart(
-                id: widget.existing?.id ?? '',
-                dayIndex: _day,
-                startHour: _start,
-                endHour: _end,
-                moodId: _moodId,
-              ))),
+          : () => Navigator.of(context).pop(_Save(
+                Daypart(
+                  id: widget.existing?.id ?? '',
+                  dayIndex: _day,
+                  startHour: _start,
+                  endHour: _end,
+                  moodId: _moodId,
+                ),
+                justThisWeek: _justThisWeek,
+              )),
       onCancel: () => Navigator.of(context).pop(),
       children: [
         const SizedBox(height: 16),
@@ -119,6 +171,29 @@ class _DaypartSheetState extends State<_DaypartSheet> {
           selected: {_day},
           onToggle: (i) => setState(() => _day = i),
         ),
+        if (widget.canChooseScope) ...[
+          const SizedBox(height: 14),
+          Text('Applies to',
+              style: PrismType.label.copyWith(color: palette.textSecondary)),
+          const SizedBox(height: 8),
+          SegToggle(
+            options: const ['Every week', 'Just this week'],
+            selected: _justThisWeek ? 1 : 0,
+            onChanged: (i) => setState(() => _justThisWeek = i == 1),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            _justThisWeek
+                // The cost, said before it is paid rather than discovered
+                // later. A forked week stops tracking the recurring plan
+                // permanently, and nothing else on screen would reveal that.
+                ? 'This week gets its own copy of the plan and stops following '
+                    'later changes to every week.'
+                : 'Changes the plan every week follows.',
+            style: PrismType.microHelper
+                .copyWith(color: palette.textSecondary),
+          ),
+        ],
         const SizedBox(height: 14),
         Text('Time',
             style: PrismType.label.copyWith(color: palette.textSecondary)),
@@ -212,8 +287,22 @@ class _DaypartSheetState extends State<_DaypartSheet> {
         if (editing) ...[
           const SizedBox(height: 16),
           GestureDetector(
-            onTap: () =>
-                Navigator.of(context).pop(_Delete(widget.existing!.id)),
+            // Confirmed, like "Remove zone". A daypart is not recoverable from
+            // the UI -- no undo, no history -- and the sheet is opened by
+            // tapping a block in a grid, so picking the wrong one is exactly
+            // the mistake worth catching.
+            onTap: () async {
+              final confirmed = await showConfirmDeleteDaypartDialog(
+                context,
+                dayName: DayChips.labels[_day],
+                rangeLabel: Daypart.formatRange(_start, _end),
+                moodName: moodById(_moodId).name,
+              );
+              if (confirmed != true) return;
+              if (!context.mounted) return;
+              Navigator.of(context).pop(_Delete(widget.existing!.id,
+                  justThisWeek: _justThisWeek));
+            },
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 10),

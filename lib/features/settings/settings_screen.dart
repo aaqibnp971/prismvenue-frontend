@@ -11,6 +11,7 @@ import '../../data/repositories/settings_repo.dart';
 import '../../data/repositories/venue_repo.dart';
 import '../../app/theme_mode.dart';
 import '../../shared/widgets/prism_dropdown_menu.dart';
+import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/settings_row.dart';
 import '../../theme/palette.dart';
@@ -26,6 +27,16 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // A guardrail write that fails reverts the optimistic value, and the revert
+    // used to be the only signal. Fine for a volume slider; not for "Who can
+    // take over", where a manager sets it, watches it flip back and is told
+    // nothing. One listener rather than nine try/catches -- updateGuardrails is
+    // fire-and-forget by design at every call site.
+    ref.listen<AsyncValue<Object>>(guardrailFailureProvider, (_, next) {
+      final error = next.value;
+      if (error != null && context.mounted) showPrismError(context, error);
+    });
+
     final user = ref.watch(sessionProvider);
     if (user == null) return const SizedBox.shrink(); // router redirects
     final palette = Theme.of(context).extension<PrismPalette>()!;
@@ -280,6 +291,24 @@ Future<int?> _showAnchoredDropdown(
       right = 15 + 8; // screen padding + row inset
     }
   }
+  // Clamp to the screen. Anchoring took the row's global offset with no bounds
+  // check, and the Alerts rows sit low on the Settings list -- on a short window
+  // their menus rendered partly off-screen, with the options you most need to
+  // reach being the ones past the edge.
+  //
+  // Measured against the anchor's own view rather than a MediaQuery from the
+  // dialog, which is not built yet.
+  final view = View.of(anchorContext);
+  final screenHeight = view.physicalSize.height / view.devicePixelRatio;
+  // PrismDropdownMenu is 44px per row plus 8px of padding; near enough to keep
+  // the whole menu on screen without reaching into its internals.
+  final menuHeight = options.length * 44.0 + 8;
+  const bottomInset = 12.0;
+  if (top + menuHeight > screenHeight - bottomInset) {
+    // Flip above the row when there is no room below.
+    top = (top - menuHeight - 8 - 4).clamp(PrismTopBar.height + 6.0, top);
+  }
+
   return showDialog<int>(
     context: anchorContext,
     barrierColor: Colors.transparent,

@@ -188,7 +188,10 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
               _nudge(daypart, days: 1),
         },
         child: GestureDetector(
-          onTap: () => showDaypartSheet(context, ref, existing: daypart),
+          onTap: () => showDaypartSheet(context, ref,
+              existing: daypart,
+              weekStart: daypart.weekStart ?? widget.weekStart,
+              alreadyForked: daypart.weekStart != null),
           // Long-press to arm, rather than a raw pan: the grid sits inside the
           // screen's scrollable, and a pan in the same axis loses the gesture
           // arena to it. A dwell also makes an accidental shove much harder in

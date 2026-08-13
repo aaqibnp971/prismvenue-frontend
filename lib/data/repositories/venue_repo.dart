@@ -21,6 +21,29 @@ abstract class VenueRepo {
     required List<String> zoneNames,
   });
 
+  /// Add a zone to an existing venue — the other half of [removeZone].
+  ///
+  /// Zones used to be creatable only as part of [addVenue], which made
+  /// "Remove zone" a one-way door: a venue whose last zone was removed had no
+  /// zone-scoped screen left and no way to get one back, because `ApiScope`
+  /// throws `no_zone_selected` on every one of them. An owner looking at a
+  /// "0 zones" row in the portfolio had nothing they could do about it.
+  ///
+  /// Throws on a duplicate name for the same reason [renameZone] does — the
+  /// value lands in the same column, under the same unique constraint.
+  Future<void> addZone(String venueId, String name);
+
+  /// S05-5's zone name field.
+  ///
+  /// The field shipped fully interactive with no save affordance and no write
+  /// path, so every edit was silently discarded on navigate-back.
+  /// `open_questions.md` #24 recorded the missing affordance; an editable field
+  /// that throws away input is a defect whatever the frame omitted.
+  ///
+  /// Throws on a duplicate name — `zones` has unique (venue_id, name) — so the
+  /// screen can say which constraint was hit rather than reverting silently.
+  Future<void> renameZone(String zoneId, String name);
+
   /// S05-5 "Remove zone".
   Future<void> removeZone(String zoneId);
 }

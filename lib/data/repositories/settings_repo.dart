@@ -9,6 +9,19 @@ abstract class SettingsRepo {
   Stream<Guardrails> watchGuardrails();
   Future<void> updateGuardrails(Guardrails next);
 
+  /// Emits when a guardrail write failed and the optimistic value was reverted.
+  ///
+  /// A stream rather than a thrown future. [updateGuardrails] is called from
+  /// nine places — sliders, toggles, segmented pickers — and is deliberately
+  /// fire-and-forget, so making it throw would put nine unhandled async
+  /// exceptions where there is currently one silent revert.
+  ///
+  /// The revert alone was the only signal, which is defensible for a volume
+  /// slider and not for "Who can take over": that decides whether floor staff
+  /// can seize the speakers, and a manager who sets it, watches it flip back
+  /// and is told nothing has every reason to assume it stuck.
+  Stream<Object> get guardrailFailures;
+
   Stream<OpenHours> watchOpenHours();
   Future<void> setEverydayHours({required int openHour, required int closeHour});
   Future<void> addException(HoursException exception);
@@ -20,8 +33,13 @@ abstract class SettingsRepo {
   Future<void> deleteException(String id);
 }
 
+/// Guardrails follow the zone, open hours follow the venue — the same split
+/// `ApiScope` gives the API repo, and the same split the schema has.
 final settingsRepoProvider = Provider<SettingsRepo>((ref) {
-  final repo = MockSettingsRepo();
+  final repo = MockSettingsRepo(
+    zoneId: () => ref.read(currentZoneIdProvider),
+    venueId: () => ref.read(currentVenueIdProvider),
+  );
   ref.onDispose(repo.dispose);
   return repo;
 });
@@ -40,3 +58,11 @@ final openHoursProvider = StreamProvider.autoDispose<OpenHours>((ref) {
   ref.watch(currentVenueIdProvider);
   return ref.watch(settingsRepoProvider).watchOpenHours();
 });
+
+/// Guardrail write failures, for the screens that write them to surface.
+///
+/// Not autoDispose: a failure can land after the debounce, by which point the
+/// manager may already have moved to another settings screen, and the error
+/// still belongs to them.
+final guardrailFailureProvider = StreamProvider<Object>(
+    (ref) => ref.watch(settingsRepoProvider).guardrailFailures);

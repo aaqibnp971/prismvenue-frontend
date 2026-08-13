@@ -37,4 +37,13 @@ class SessionContext {
         zoneId: json['zone_id'] as String?,
         zoneName: json['zone_name'] as String?,
       );
+
+  /// Same keys as [fromJson], so what is persisted locally and what the server
+  /// sends at sign-in are one shape rather than two that must be kept in step.
+  Map<String, dynamic> toJson() => {
+        'venue_id': venueId,
+        'venue_name': venueName,
+        'zone_id': zoneId,
+        'zone_name': zoneName,
+      };
 }

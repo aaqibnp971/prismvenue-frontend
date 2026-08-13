@@ -8,17 +8,40 @@ import '../repositories/playback_repo.dart';
 /// In-memory playback seeded with the README's Marina Café example:
 /// Afternoon lift playing, Prism driving, noise 62%, context
 /// "mid-afternoon · ~60% full · clear".
+///
+/// **State is per zone**, keyed by [zoneId], because that is what the schema
+/// is: `zone_state` has one row per zone, so two rooms play two moods and
+/// changing one must not move the other. The mock held a single shared
+/// `PlaybackState`, which was invisible while the app had no way to change
+/// rooms — and became actively misleading the moment "Open floor" started
+/// working on every zone, since every venue then appeared to play whatever was
+/// set last. A mock that cannot express independence documents the wrong shape.
 class MockPlaybackRepo implements PlaybackRepo {
-  MockPlaybackRepo({this.tickNoise = true});
+  MockPlaybackRepo({this.tickNoise = true, String? Function()? zoneId})
+      : _zoneId = zoneId ?? (() => null);
 
   /// False in widget tests — a periodic timer never lets pumpAndSettle rest.
   final bool tickNoise;
 
-  PlaybackState _state = const PlaybackState(
+  /// Resolved at call time, exactly as `ApiScope` does it, so switching the
+  /// session's zone repoints this repository with nothing to rebuild.
+  ///
+  /// Defaults to a resolver returning null, which collapses every zone into
+  /// one bucket — the pre-zone behaviour, and what a test constructing this
+  /// directly still gets.
+  final String? Function() _zoneId;
+
+  static const _seed = PlaybackState(
     moodId: 'afternoon-lift',
     paused: false,
     contextLine: 'mid-afternoon · ~60% full · clear',
   );
+
+  /// One entry per room the session has actually looked at. Absent means
+  /// "never touched", which reads as the seed rather than as an error.
+  final _states = <String?, PlaybackState>{};
+
+  PlaybackState get _state => _states[_zoneId()] ?? _seed;
   int _noise = 62;
 
   final _stateController = StreamController<PlaybackState>.broadcast();
@@ -57,7 +80,7 @@ class MockPlaybackRepo implements PlaybackRepo {
   }
 
   void _emit(PlaybackState next) {
-    _state = next;
+    _states[_zoneId()] = next;
     _stateController.add(next);
   }
 
@@ -85,9 +108,20 @@ class MockPlaybackRepo implements PlaybackRepo {
 
   // ---- Takeover (§2 S02) ----
 
-  TakeoverState _takeover = TakeoverState.inactive;
+  /// Per zone, like [_states] and for the same reason: `takeovers` is keyed by
+  /// `zone_id`, so staff holding the Terrace must not make the Main floor look
+  /// held too.
+  final _takeovers = <String?, TakeoverState>{};
+
+  /// One clock per held room. Keyed rather than single, because the zone the
+  /// countdown belongs to is decided when it STARTS — reading `_zoneId()` from
+  /// inside the tick would write the Terrace's remaining time into whichever
+  /// room the manager happened to switch to since.
+  final _takeoverTickers = <String?, Timer>{};
+
   final _takeoverController = StreamController<TakeoverState>.broadcast();
-  Timer? _takeoverTicker;
+
+  TakeoverState get _takeover => _takeovers[_zoneId()] ?? TakeoverState.inactive;
 
   @override
   Stream<TakeoverState> watchTakeover() async* {
@@ -95,36 +129,42 @@ class MockPlaybackRepo implements PlaybackRepo {
     yield* _takeoverController.stream;
   }
 
-  void _emitTakeover(TakeoverState next) {
-    _takeover = next;
-    _takeoverController.add(next);
+  void _emitTakeover(String? zone, TakeoverState next) {
+    _takeovers[zone] = next;
+    // Only the room in view has listeners worth waking; emitting another
+    // zone's countdown into them would tick the wrong screen.
+    if (zone == _zoneId()) _takeoverController.add(next);
   }
 
   @override
   Future<void> startTakeover({required Duration handBackAfter}) async {
-    _emitTakeover(TakeoverState(
-      active: true,
-      startedAt: DateTime.now(),
-      remaining: handBackAfter,
-      // Seed name matching the S02-2 frame footer; the API supplies the real
-      // signed-in staff member.
-      startedByName: 'Priya N',
-    ));
-    // One shared 1s clock drives the visible countdown and the automatic
-    // hand-back ("Returns automatically after …", §6-A7). With auto-return
-    // removed it keeps ticking but only re-emits, so the elapsed footer
-    // stays live without anything counting down.
-    _takeoverTicker?.cancel();
-    _takeoverTicker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!_takeover.hasAutoReturn) {
-        _emitTakeover(_takeover);
+    final zone = _zoneId();
+    _emitTakeover(
+        zone,
+        TakeoverState(
+          active: true,
+          startedAt: DateTime.now(),
+          remaining: handBackAfter,
+          // Seed name matching the S02-2 frame footer; the API supplies the
+          // real signed-in staff member.
+          startedByName: 'Priya N',
+        ));
+    // A 1s clock drives the visible countdown and the automatic hand-back
+    // ("Returns automatically after …", §6-A7). With auto-return removed it
+    // keeps ticking but only re-emits, so the elapsed footer stays live
+    // without anything counting down.
+    _takeoverTickers.remove(zone)?.cancel();
+    _takeoverTickers[zone] = Timer.periodic(const Duration(seconds: 1), (_) {
+      final current = _takeovers[zone] ?? TakeoverState.inactive;
+      if (!current.hasAutoReturn) {
+        _emitTakeover(zone, current);
         return;
       }
-      final next = _takeover.remaining - const Duration(seconds: 1);
+      final next = current.remaining - const Duration(seconds: 1);
       if (next <= Duration.zero) {
-        endTakeover();
+        _endTakeoverFor(zone);
       } else {
-        _emitTakeover(_takeover.copyWith(remaining: next));
+        _emitTakeover(zone, current.copyWith(remaining: next));
       }
     });
   }
@@ -133,28 +173,34 @@ class MockPlaybackRepo implements PlaybackRepo {
   Future<void> extendTakeover(Duration by) async {
     if (!_takeover.active) return;
     // §6-A7: extend adds the chosen duration.
-    _emitTakeover(_takeover.copyWith(remaining: _takeover.remaining + by));
+    _emitTakeover(_zoneId(), _takeover.copyWith(remaining: _takeover.remaining + by));
   }
 
   @override
   Future<void> removeAutoReturn() async {
     if (!_takeover.active) return;
-    _emitTakeover(_takeover.copyWith(
-      hasAutoReturn: false,
-      remaining: Duration.zero,
-    ));
+    _emitTakeover(
+        _zoneId(),
+        _takeover.copyWith(
+          hasAutoReturn: false,
+          remaining: Duration.zero,
+        ));
   }
 
   @override
-  Future<void> endTakeover() async {
-    _takeoverTicker?.cancel();
-    _takeoverTicker = null;
-    _emitTakeover(TakeoverState.inactive);
+  Future<void> endTakeover() async => _endTakeoverFor(_zoneId());
+
+  void _endTakeoverFor(String? zone) {
+    _takeoverTickers.remove(zone)?.cancel();
+    _emitTakeover(zone, TakeoverState.inactive);
   }
 
   void dispose() {
     _stopTicking();
-    _takeoverTicker?.cancel();
+    for (final ticker in _takeoverTickers.values) {
+      ticker.cancel();
+    }
+    _takeoverTickers.clear();
     _stateController.close();
     _noiseController.close();
     _takeoverController.close();

@@ -46,6 +46,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:prism_core_bindings/prism_core_bindings.dart';
 
 import 'prism_engine.dart';
+import 'weather_influence.dart';
 
 /// Where the bundled scenes live in the asset tree.
 const _assetDir = 'assets/audio';
@@ -73,6 +74,16 @@ class PlatformPrismEngine implements PrismEngine {
   String? _desiredMood;
 
   bool _silenced = false;
+
+  /// The environmental adjustment folded into every pin. Neutral until the host
+  /// has a weather reading, and neutral again the moment it loses one — so a
+  /// dropped network returns the room to the plain preset rather than freezing
+  /// it on the last sky it saw.
+  PsvNudge _nudge = PsvNudge.none;
+
+  /// The preset for [_currentMood], kept so an influence change can re-pin
+  /// without re-deriving it or touching the scene.
+  VenueMood? _currentPreset;
 
   /// Mirrors the core's device state. `prism_device_start` returns
   /// INVALID_STATE when the device is already running, and the controller
@@ -193,7 +204,7 @@ class PlatformPrismEngine implements PrismEngine {
           crossfade: transition ?? const Duration(seconds: 35),
           alignToBar: alignToBar ?? true,
         );
-        core.setMoodOverride(mood);
+        _pin(core, mood);
         _currentMood = moodId;
         if (!_silenced) {
           _deviceStart(core);
@@ -209,7 +220,7 @@ class PlatformPrismEngine implements PrismEngine {
     try {
       next.loadScene(scenePath);
       next.start();
-      next.setMoodOverride(mood);
+      _pin(next, mood);
     } catch (_) {
       next.dispose(); // never leak a half-built handle
       rethrow;
@@ -225,6 +236,51 @@ class PlatformPrismEngine implements PrismEngine {
     }
   }
 
+  /// Publishes the PSV for [mood], with the current environmental adjustment
+  /// folded in.
+  ///
+  /// The single place the vector is pinned, which is the point: weather has to
+  /// reach the first mood of a session and every mood after it, and two call
+  /// sites that each remembered to apply it would eventually become one that
+  /// did and one that did not.
+  ///
+  /// The mood's `id` and `mode_hint` are untouched by [VenueMood.adjusted] —
+  /// this is still Peak, just Peak on a wet night.
+  void _pin(PrismCore core, VenueMood mood) {
+    _currentPreset = mood;
+    core.setMoodOverride(_nudge.isNeutral
+        ? mood
+        : mood.adjusted(
+            arousal: _nudge.arousal,
+            cognitiveLoad: _nudge.cognitiveLoad,
+            readiness: _nudge.readiness,
+          ));
+  }
+
+  @override
+  Future<void> applyInfluence(PsvNudge nudge) =>
+      _serialise('applyInfluence', () async {
+        if (nudge.arousal == _nudge.arousal &&
+            nudge.cognitiveLoad == _nudge.cognitiveLoad &&
+            nudge.readiness == _nudge.readiness) {
+          return;
+        }
+        _nudge = nudge;
+
+        // Nothing playing yet: remembered above, applied by the next pin. This
+        // is the common case at launch, where the weather fetch usually beats
+        // the first now-playing frame.
+        final core = _core;
+        final preset = _currentPreset;
+        if (core == null || preset == null) return;
+
+        // Re-publish only. No scene work, no crossfade, no device restart —
+        // the mood has not changed, only how it is rendered. The engine ramps
+        // into the new vector (cutoff over 0.6 s, levels over 0.25 s), so a
+        // sky that clouds over is heard as a slow settling rather than a step.
+        _pin(core, preset);
+      });
+
   /// Stops and destroys the current handle, if any, leaving the engine with no
   /// core. Safe to call repeatedly.
   void _teardownCore() {
@@ -232,6 +288,7 @@ class PlatformPrismEngine implements PrismEngine {
     if (core == null) return;
     _core = null;
     _currentMood = null;
+    _currentPreset = null;
     _deviceStop(core);
     core.stop();
     core.dispose();

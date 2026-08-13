@@ -145,6 +145,46 @@ void main() {
     expect(find.text('Fri & Sat'), findsNWidgets(2));
   });
 
+  testWidgets('H-03 the zone name field saves instead of discarding the edit',
+      (tester) async {
+    await pumpApp(tester, email: 'priya@marinacafe.com');
+    await tester.tap(find.text('Venues'));
+    await _settle(tester);
+    await tester.tap(find.text('Main floor'));
+    await _settle(tester);
+
+    // The field shipped fully interactive with no save affordance and no write
+    // path, so this edit used to vanish on navigate-back.
+    await tester.enterText(find.byType(TextField).first, 'Garden room');
+    // Saves on blur.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await _settle(tester);
+
+    await tester.tap(find.text('Venues'));
+    await _settle(tester);
+    expect(find.text('Garden room'), findsOneWidget);
+    expect(find.text('Main floor'), findsNothing);
+  });
+
+  testWidgets('H-03 a duplicate zone name is refused, not silently reverted',
+      (tester) async {
+    await pumpApp(tester, email: 'priya@marinacafe.com');
+    await tester.tap(find.text('Venues'));
+    await _settle(tester);
+    await tester.tap(find.text('Main floor'));
+    await _settle(tester);
+
+    // "Terrace" is the sibling zone. zones has unique (venue_id, name).
+    await tester.enterText(find.byType(TextField).first, 'Terrace');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await _settle(tester);
+
+    // The field goes back to the server's truth rather than leaving a value
+    // that never landed on screen.
+    expect(
+        find.textContaining('already uses that name'), findsOneWidget);
+  });
+
   testWidgets('S05-5 zone detail: reached from S04-1, Remove zone works',
       (tester) async {
     await pumpApp(tester, email: 'priya@marinacafe.com');

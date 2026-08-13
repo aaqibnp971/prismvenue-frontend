@@ -30,9 +30,10 @@ class Zone {
   /// Extra status text, e.g. the off-schedule countdown ("auto in 42 min").
   final String? statusDetail;
 
-  Zone copyWith({ZoneStatus? status, String? statusDetail}) => Zone(
+  Zone copyWith({String? name, ZoneStatus? status, String? statusDetail}) =>
+      Zone(
         id: id,
-        name: name,
+        name: name ?? this.name,
         status: status ?? this.status,
         moodId: moodId,
         statusDetail:

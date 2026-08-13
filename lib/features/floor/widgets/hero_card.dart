@@ -23,9 +23,24 @@ class HeroCard extends StatelessWidget {
     this.onTogglePause,
     this.onTakeOver,
     this.onReturnToAuto,
+    this.contextFallback,
   });
 
   final PlaybackState state;
+
+  /// Shown in place of [PlaybackState.contextLine] while the server has none.
+  ///
+  /// The server's line is authoritative and always wins — it is pre-formatted
+  /// and rendered verbatim, and when telemetry ingest lands it will carry the
+  /// occupancy and noise segments no client can know. But nothing writes it
+  /// today, so the slot has been permanently blank.
+  ///
+  /// The designed example is "mid-afternoon · ~60% full · clear" — that last
+  /// segment is a weather word, so putting the venue's sky here is filling in
+  /// the slot as specified rather than inventing a surface. It is also the only
+  /// thing that makes the weather influence visible: without it, the feature
+  /// changes the sound and nothing on screen explains why.
+  final String? contextFallback;
   /// 0–100, or null when nothing has reported. Null renders an empty track and
   /// a dash rather than inventing a plausible number — see [NoiseMeter].
   final int? noise;
@@ -174,7 +189,10 @@ class HeroCard extends StatelessWidget {
                     // It is now the standing AutoButton beside "Take over" —
                     // staff could not discover "just follow the schedule"
                     // without first overriding to make the link appear.
-                    Text(state.contextLine,
+                    Text(
+                        state.contextLine.isNotEmpty
+                            ? state.contextLine
+                            : (contextFallback ?? ''),
                         style: PrismType.microHelper
                             .copyWith(color: palette.textSecondary)),
                   ],

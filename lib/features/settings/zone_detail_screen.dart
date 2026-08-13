@@ -10,6 +10,7 @@ import '../../data/models/venue.dart';
 import '../../data/repositories/settings_repo.dart';
 import '../../data/repositories/venue_repo.dart';
 import '../../shared/widgets/error_note.dart';
+import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/prism_field.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/settings_row.dart';
@@ -41,6 +42,31 @@ class _ZoneDetailScreenState extends ConsumerState<ZoneDetailScreen> {
   void dispose() {
     _name.dispose();
     super.dispose();
+  }
+
+  /// Commits the name field. No-ops when nothing changed, so tabbing through
+  /// the form does not write, and re-saving an unchanged value is never an
+  /// error.
+  ///
+  /// On failure the field is put back to [current]: the server is the authority
+  /// on the zone's name, and leaving a rejected value on screen would let the
+  /// manager walk away believing it stuck — which is the whole defect this
+  /// replaces, just one step later.
+  Future<void> _saveName(String current) async {
+    final next = _name.text.trim();
+    if (next.isEmpty) {
+      _name.text = current;
+      return;
+    }
+    if (next == current) return;
+
+    try {
+      await ref.read(venueRepoProvider).renameZone(zoneId, next);
+    } catch (e) {
+      if (!mounted) return;
+      _name.text = current;
+      showPrismError(context, e);
+    }
   }
 
   @override
@@ -80,7 +106,13 @@ class _ZoneDetailScreenState extends ConsumerState<ZoneDetailScreen> {
           ),
           Expanded(
             child: zone == null
-                ? const SizedBox.shrink() // removed/unknown; undesigned
+                // Was SizedBox.shrink(). Reachable two ways -- an unknown id,
+                // and the zone you just removed -- and both showed an empty
+                // screen with no way back and no explanation.
+                ? ErrorState(
+                    message: 'That zone is no longer available.',
+                    onRetry: () => context.go(backTarget),
+                  )
                 : SingleChildScrollView(
                     padding: const EdgeInsets.all(15),
                     child: SizedBox(
@@ -88,7 +120,18 @@ class _ZoneDetailScreenState extends ConsumerState<ZoneDetailScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          PrismField(label: 'Zone name', controller: _name),
+                          // Saves on blur. The field used to be fully
+                          // interactive with no save affordance and no write
+                          // path, so every edit was silently discarded on
+                          // navigate-back — the worst of both, since it looked
+                          // exactly like a field that worked.
+                          Focus(
+                            onFocusChange: (hasFocus) {
+                              if (!hasFocus) _saveName(zone.name);
+                            },
+                            child: PrismField(
+                                label: 'Zone name', controller: _name),
+                          ),
                           const SizedBox(height: 14),
                           SettingsRow(
                             title: 'Open hours',

@@ -183,7 +183,7 @@ void main() {
       ];
 
       final plan =
-          await ApiScheduleRepo(buildClient(), scope()).watchWeekPlan().first;
+          await ApiScheduleRepo(buildClient(), scope()).watchWeekPlan(null).first;
 
       expect(plan.single.rangeLabel, '7 – 11 am');
       expect(plan.single.startHour, 7);

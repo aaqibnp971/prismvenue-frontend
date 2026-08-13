@@ -7,15 +7,24 @@ import '../repositories/schedule_repo.dart';
 /// examples; the weekly plan mirrors them on every day within the S05-6
 /// default open hours (7am–11pm). Exact times are seed data
 /// (open_questions).
+///
+/// **Everything here is per zone**, keyed by [zoneId], because that is what the
+/// schema is: `dayparts.zone_id` and `zone_guardrails.self_drive` are both
+/// per-zone, so two rooms run two plans and switching one must not move the
+/// other. The mock held one shared plan and one shared mode, which was
+/// invisible while the app had no way to change rooms and became actively
+/// misleading once "Open floor" started working on every zone.
 class MockScheduleRepo implements ScheduleRepo {
-  /// Rebuilt per read so switching mode moves the Floor rail too — the plan
-  /// only "runs" on a custom plan.
-  TodaySchedule get _today => TodaySchedule(
-        auto: true,
-        nowIndex: 2,
-        selfDrive: _mode == ScheduleMode.selfDrive,
-        entries: _todayEntries,
-      );
+  MockScheduleRepo({String? Function()? zoneId})
+      : _zoneId = zoneId ?? (() => null);
+
+  /// Resolved at call time, exactly as `ApiScope` does it, so switching the
+  /// session's zone repoints this repository with nothing to rebuild.
+  ///
+  /// Defaults to a resolver returning null, which collapses every zone into
+  /// one bucket — the pre-zone behaviour, and what a test constructing this
+  /// directly still gets.
+  final String? Function() _zoneId;
 
   static const _todayEntries = [
     ScheduleEntry(timeLabel: '7:00 am', moodId: 'morning-calm'),
@@ -36,19 +45,35 @@ class MockScheduleRepo implements ScheduleRepo {
     (21, 23, 'peak'),
   ];
 
-  var _mode = ScheduleMode.selfDrive; // S03-1 is the entry frame
-  late final List<Daypart> _plan = [
-    for (var day = 0; day < 7; day++)
-      for (final (i, (start, end, moodId)) in _dayTemplate.indexed)
-        Daypart(
-          id: 'd$day-$i',
-          dayIndex: day,
-          startHour: start,
-          endHour: end,
-          moodId: moodId,
-        ),
-  ];
+  final _zones = <String?, _ZoneSchedule>{};
   var _nextId = 0;
+
+  /// This zone's plan, seeded on first look. A room nobody has opened yet
+  /// starts on the same defaults a fresh zone gets from the server: self-drive
+  /// (S03-1 is the entry frame) over the seeded weekly plan.
+  _ZoneSchedule get _z =>
+      _zones.putIfAbsent(_zoneId(), () => _ZoneSchedule(_seedPlan()));
+
+  List<Daypart> _seedPlan() => [
+        for (var day = 0; day < 7; day++)
+          for (final (i, (start, end, moodId)) in _dayTemplate.indexed)
+            Daypart(
+              id: 'd${_nextId++}-$day-$i',
+              dayIndex: day,
+              startHour: start,
+              endHour: end,
+              moodId: moodId,
+            ),
+      ];
+
+  /// Rebuilt per read so switching mode moves the Floor rail too — the plan
+  /// only "runs" on a custom plan.
+  TodaySchedule get _today => TodaySchedule(
+        auto: true,
+        nowIndex: 2,
+        selfDrive: _z.mode == ScheduleMode.selfDrive,
+        entries: _todayEntries,
+      );
 
   final _todayController = StreamController<TodaySchedule>.broadcast();
   final _modeController = StreamController<ScheduleMode>.broadcast();
@@ -62,49 +87,90 @@ class MockScheduleRepo implements ScheduleRepo {
 
   @override
   Stream<ScheduleMode> watchMode() async* {
-    yield _mode;
+    yield _z.mode;
     yield* _modeController.stream;
   }
 
   @override
   Future<void> setMode(ScheduleMode mode) async {
-    _mode = mode;
+    _z.mode = mode;
     _modeController.add(mode);
     // The Floor rail shows whether the plan is running, so it has to hear
     // about the switch too.
     _todayController.add(_today);
   }
 
+  /// The week currently being watched, so [_emitPlan] emits the right one.
+  DateTime? _watching;
+
+  List<Daypart> _effective(DateTime? week) {
+    final fork = week == null ? null : _z.forks[week];
+    return List.unmodifiable(fork ?? _z.plan);
+  }
+
   @override
-  Stream<List<Daypart>> watchWeekPlan() async* {
-    yield List.unmodifiable(_plan);
+  Stream<List<Daypart>> watchWeekPlan(DateTime? weekStart) async* {
+    _watching = weekStart;
+    yield _effective(weekStart);
     yield* _planController.stream;
   }
 
-  void _emitPlan() => _planController.add(List.unmodifiable(_plan));
+  @override
+  Future<void> forkWeek(DateTime weekStart) async {
+    // Idempotent, like the server: a week that already has its own plan is left
+    // alone, so a double tap cannot duplicate it.
+    if (_z.forks.containsKey(weekStart)) return;
+    _z.forks[weekStart] = [
+      for (final d in _z.plan)
+        Daypart(
+          id: 'fork-${_nextId++}',
+          dayIndex: d.dayIndex,
+          startHour: d.startHour,
+          endHour: d.endHour,
+          moodId: d.moodId,
+          weekStart: weekStart,
+        ),
+    ];
+    _emitPlan();
+  }
+
+  /// The list a write should land in — the watched week's fork when it has one,
+  /// otherwise the recurring plan.
+  List<Daypart> get _target {
+    final week = _watching;
+    if (week != null && _z.forks.containsKey(week)) return _z.forks[week]!;
+    return _z.plan;
+  }
+
+  void _emitPlan() => _planController.add(_effective(_watching));
 
   @override
   Future<void> addDaypart(Daypart daypart) async {
-    _plan.add(Daypart(
+    _target.add(Daypart(
       id: 'new-${_nextId++}',
       dayIndex: daypart.dayIndex,
       startHour: daypart.startHour,
       endHour: daypart.endHour,
       moodId: daypart.moodId,
+      weekStart: daypart.weekStart,
     ));
     _emitPlan();
   }
 
   @override
   Future<void> updateDaypart(Daypart daypart) async {
-    final i = _plan.indexWhere((d) => d.id == daypart.id);
-    if (i != -1) _plan[i] = daypart;
+    // `_target`, not the recurring plan. Searching `_plan` meant a forked
+    // week's rows — whose ids are `fork-N` and therefore never in it — matched
+    // nothing, so editing a daypart in a week someone had chosen "just this
+    // week" for was a silent no-op. Add and delete already used `_target`.
+    final i = _target.indexWhere((d) => d.id == daypart.id);
+    if (i != -1) _target[i] = daypart;
     _emitPlan();
   }
 
   @override
   Future<void> deleteDaypart(String id) async {
-    _plan.removeWhere((d) => d.id == id);
+    _target.removeWhere((d) => d.id == id);
     _emitPlan();
   }
 
@@ -113,4 +179,19 @@ class MockScheduleRepo implements ScheduleRepo {
     _modeController.close();
     _planController.close();
   }
+}
+
+/// One room's schedule: which mode it is in, its recurring plan, and any weeks
+/// forked off it.
+class _ZoneSchedule {
+  _ZoneSchedule(this.plan);
+
+  /// S03-1 is the entry frame, so an untouched zone is self-driving — the same
+  /// default `GET /mode` applies to a zone with no guardrails row.
+  var mode = ScheduleMode.selfDrive;
+
+  final List<Daypart> plan;
+
+  /// Forked weeks, keyed by Monday. Absent means the week shows [plan].
+  final forks = <DateTime, List<Daypart>>{};
 }

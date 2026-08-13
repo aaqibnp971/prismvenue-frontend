@@ -106,3 +106,69 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# === The sound engine ===
+#
+# `PrismCore.defaultLibrary()` calls `DynamicLibrary.open('prism_core.dll')`,
+# which Windows resolves next to the executable. Nothing used to put it there:
+# `packaging/build_windows_release.ps1` copied it while staging a distributable,
+# so `flutter build windows` bundles worked and `flutter run -d windows` — which
+# never goes near that script, and writes to the Debug runner directory — failed
+# every `setMood` with "Failed to load dynamic library 'prism_core.dll'"
+# (error 126). The dashboard runs perfectly and the room stays silent, which is
+# the most expensive way for this to be wrong.
+#
+# Installing it here covers every configuration and both entry points, because
+# CMAKE_VS_INCLUDE_INSTALL_TO_DEFAULT_BUILD above makes the install step part of
+# the default build.
+#
+# The DLL is a build artifact of a SIBLING repo, not a checked-in binary, so it
+# is genuinely optional: prism-core may not have been built, and on a machine
+# where it has not been the app must still build and run. Hence the existence
+# check at configure time rather than a bare install(FILES), which would fail
+# the build outright for anyone who has not built the engine.
+#
+# Build it with, from prism-core/:
+#   cmake -S . -B build/shared-win -DPRISM_BUILD_SHARED=ON -DPRISM_BUILD_TESTS=OFF
+#   cmake --build build/shared-win --target prism_core_shared --config Release
+#
+# Re-run CMake after building it for the first time (`flutter clean`, or just
+# touch this file) — the check below runs at configure time, not build time.
+set(PRISM_CORE_DLL "" CACHE FILEPATH
+  "prism_core.dll to ship beside the executable. Empty = search the usual build outputs.")
+
+if(NOT PRISM_CORE_DLL)
+  # Release first: that is what packaging ships and what the MSVC multi-config
+  # generator produces. A Release DLL beside a Debug exe is fine and deliberate
+  # — the boundary is the flat C ABI in include/prism/prism_core.h, so no C++
+  # objects, STL types or allocations cross it, which is the whole reason the
+  # ABI is shaped that way.
+  foreach(_candidate
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../prism-core/build/shared-win/core/Release/prism_core.dll"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../prism-core/build/shared-win/core/Debug/prism_core.dll"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../prism-core/build/shared/core/prism_core.dll")
+    if(EXISTS "${_candidate}")
+      set(PRISM_CORE_DLL "${_candidate}")
+      break()
+    endif()
+  endforeach()
+endif()
+
+if(PRISM_CORE_DLL AND EXISTS "${PRISM_CORE_DLL}")
+  message(STATUS "Prism engine: shipping ${PRISM_CORE_DLL}")
+  install(FILES "${PRISM_CORE_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+else()
+  # A warning, not an error. A venue dashboard that builds and runs without
+  # audio is the documented degraded mode (`lib/engine/prism_engine_native.dart`
+  # swallows load failures into `status`/`lastError` for the same reason); a
+  # build that refuses to start because a sibling repo has not been compiled is
+  # not.
+  message(WARNING
+    "Prism engine: prism_core.dll not found - building WITHOUT audio.\n"
+    "  Build it from prism-core/:\n"
+    "    cmake -S . -B build/shared-win -DPRISM_BUILD_SHARED=ON -DPRISM_BUILD_TESTS=OFF\n"
+    "    cmake --build build/shared-win --target prism_core_shared --config Release\n"
+    "  then re-run CMake (flutter clean), or pass -DPRISM_CORE_DLL=<path>.\n"
+    "  PRISM_CORE_LIB=<path> in the environment also overrides the lookup at runtime.")
+endif()
