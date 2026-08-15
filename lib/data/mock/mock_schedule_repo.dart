@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../api/api_exception.dart';
 import '../models/schedule_entry.dart';
 import '../repositories/schedule_repo.dart';
 
@@ -176,7 +177,8 @@ class MockScheduleRepo implements ScheduleRepo {
   void _emitPlan() => _planController.add(_effective(_watching));
 
   @override
-  Future<void> addDaypart(Daypart daypart) async {
+  Future<void> addDaypart(Daypart daypart, {bool replace = false}) async {
+    _requireFreeSlot(daypart, replace: replace, exceptId: null);
     _target.add(Daypart(
       id: 'new-${_nextId++}',
       dayIndex: daypart.dayIndex,
@@ -191,7 +193,8 @@ class MockScheduleRepo implements ScheduleRepo {
   }
 
   @override
-  Future<void> updateDaypart(Daypart daypart) async {
+  Future<void> updateDaypart(Daypart daypart, {bool replace = false}) async {
+    _requireFreeSlot(daypart, replace: replace, exceptId: daypart.id);
     // `_target`, not the recurring plan. Searching `_plan` meant a forked
     // week's rows — whose ids are `fork-N` and therefore never in it — matched
     // nothing, so editing a daypart in a week someone had chosen "just this
@@ -199,6 +202,28 @@ class MockScheduleRepo implements ScheduleRepo {
     final i = _target.indexWhere((d) => d.id == daypart.id);
     if (i != -1) _target[i] = daypart;
     _emitPlan();
+  }
+
+  /// Fails the way the API fails, or the screen's confirm-and-retry path is
+  /// never really exercised — the whole point of keeping the mocks.
+  ///
+  /// Removes the occupant when [replace] is set, exactly as the server deletes
+  /// it inside the write transaction.
+  void _requireFreeSlot(Daypart daypart,
+      {required bool replace, String? exceptId}) {
+    final clash = _target.where((d) =>
+        d.id != exceptId &&
+        d.dayIndex == daypart.dayIndex &&
+        d.startMinutesOfDay == daypart.startMinutesOfDay);
+    if (clash.isEmpty) return;
+    if (!replace) {
+      throw const ApiException(
+        statusCode: 409,
+        code: 'daypart_slot_taken',
+        message: 'Something already starts at that time on that day.',
+      );
+    }
+    _target.removeWhere((d) => clash.any((c) => c.id == d.id));
   }
 
   @override

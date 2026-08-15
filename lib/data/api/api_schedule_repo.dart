@@ -81,19 +81,20 @@ class ApiScheduleRepo implements ScheduleRepo {
       '${d.day.toString().padLeft(2, '0')}';
 
   @override
-  Future<void> addDaypart(Daypart daypart) async {
+  Future<void> addDaypart(Daypart daypart, {bool replace = false}) async {
     // The client's `id` is ignored — the server assigns the real one, which is
     // why the sheet can construct a Daypart with an empty id.
     await _client.post(
       '/zones/${_scope.requireZone()}/dayparts',
-      body: _daypartToJson(daypart),
+      body: {..._daypartToJson(daypart), 'replace': replace},
     );
     await _refreshPlan();
   }
 
   @override
-  Future<void> updateDaypart(Daypart daypart) async {
-    await _client.patch('/dayparts/${daypart.id}', body: _daypartToJson(daypart));
+  Future<void> updateDaypart(Daypart daypart, {bool replace = false}) async {
+    await _client.patch('/dayparts/${daypart.id}',
+        body: {..._daypartToJson(daypart), 'replace': replace});
     await _refreshPlan();
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/api/api_exception.dart';
 import '../../data/models/schedule_entry.dart';
 import '../../data/repositories/schedule_repo.dart';
 import '../../shared/widgets/day_chips.dart';
@@ -10,6 +11,7 @@ import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/seg_toggle.dart';
 import '../settings/widgets/time_field.dart';
 import 'confirm_delete_daypart_dialog.dart';
+import 'replace_daypart_dialog.dart';
 import '../../theme/moods.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
@@ -61,10 +63,47 @@ Future<void> showDaypartSheet(
         final scoped = scopeToWeek
             ? daypart.copyWith(weekStart: weekStart)
             : daypart.copyWith(clearWeekStart: true);
-        if (existing == null) {
-          await repo.addDaypart(scoped);
-        } else {
-          await repo.updateDaypart(scoped);
+        Future<void> write({required bool replace}) => existing == null
+            ? repo.addDaypart(scoped, replace: replace)
+            : repo.updateDaypart(scoped, replace: replace);
+
+        // Try, then ask. The server owns the answer — another iPad may have
+        // taken the slot a second ago — so a local pre-check would be both
+        // slower to write and wrong more often. A 409 here is not a failure to
+        // report, it is a question to put.
+        try {
+          await write(replace: false);
+        } on ApiException catch (e) {
+          if (e.code != 'daypart_slot_taken') rethrow;
+          if (!context.mounted) return;
+
+          // Best effort: the 409 does not say what was in the way, so the
+          // occupant is looked up in the plan the screen already holds. Null
+          // when it cannot be found, and the copy drops the name rather than
+          // guessing at one.
+          // Keyed by the week the SCREEN is showing, not by the daypart's own
+          // weekStart. They differ: a row on the recurring plan has a null
+          // weekStart while the screen is watching a specific Monday, and
+          // reading the other family member gets a provider nobody has
+          // subscribed to — freshly created, therefore empty.
+          final plan = ref.read(weekPlanProvider(weekStart)).value;
+          final clash = plan
+              ?.where((d) =>
+                  d.id != scoped.id &&
+                  d.dayIndex == scoped.dayIndex &&
+                  d.startMinutesOfDay == scoped.startMinutesOfDay)
+              .firstOrNull;
+
+          final confirmed = await showReplaceDaypartDialog(
+            context,
+            timeLabel: TimeField.timeLabel(scoped.startMinutesOfDay),
+            dayName: _dayNames[scoped.dayIndex],
+            newMoodName: moodById(scoped.moodId).name,
+            replacedMoodName:
+                clash == null ? null : moodById(clash.moodId).name,
+          );
+          if (confirmed != true) return;
+          await write(replace: true);
         }
       case _Delete(:final id, justThisWeek: final deleteJustThisWeek):
         // Same ordering rule as a save: fork first, or the id being deleted
@@ -78,6 +117,16 @@ Future<void> showDaypartSheet(
     if (context.mounted) showPrismError(context, e);
   }
 }
+
+const _dayNames = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+];
 
 sealed class _DaypartResult {}
 

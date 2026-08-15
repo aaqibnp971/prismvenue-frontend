@@ -33,8 +33,20 @@ abstract class ScheduleRepo {
   /// asking.
   Future<void> forkWeek(DateTime weekStart);
 
-  Future<void> addDaypart(Daypart daypart);
-  Future<void> updateDaypart(Daypart daypart);
+  /// Throws a 409 `daypart_slot_taken` when another daypart on the same day
+  /// already starts at the same time, unless [replace] is set.
+  ///
+  /// Same start time is the one overlap the scheduler cannot resolve:
+  /// `app.scheduled_mood_for` ends `order by start_local desc limit 1`, and
+  /// between equal keys that order is unspecified, so the room plays an
+  /// arbitrary one of the two and can change its mind between ticks. Ordinary
+  /// overlap stays allowed — it resolves to the later start, and a contiguous
+  /// weekly plan means a drag can hardly move without touching a neighbour.
+  ///
+  /// [replace] is not a "force" flag for convenience: it is how the UI says the
+  /// manager was shown what would be overwritten and agreed to it.
+  Future<void> addDaypart(Daypart daypart, {bool replace = false});
+  Future<void> updateDaypart(Daypart daypart, {bool replace = false});
   Future<void> deleteDaypart(String id);
 }
 

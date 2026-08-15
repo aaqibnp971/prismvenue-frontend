@@ -105,7 +105,9 @@ void main() {
     await _settle(tester);
     expect(find.text('Add a daypart'), findsOneWidget);
 
-    // Pick Wednesday + Peak; keep the default time.
+    // Pick Wednesday + Peak; keep the default time. The seeded plan already
+    // runs 6–9pm every day, so this lands on an occupied slot — which is now a
+    // question rather than a second row at the same minute.
     await tester.tap(find.descendant(
         of: find.byType(PrismBottomSheet), matching: find.text('Wed')));
     await _settle(tester);
@@ -115,9 +117,45 @@ void main() {
     await tester.tap(find.text('Add daypart'));
     await _settle(tester);
 
-    // 7 seeded Peaks + the new one.
+    expect(find.text('Replace what starts at 6:00 pm?'), findsOneWidget);
+    // Names what is being lost, so "Replace" is an informed tap.
+    // findRichText, because the body bolds the mood being saved and is
+    // therefore a span tree rather than a plain string.
+    expect(
+        find.textContaining('Evening warmth already starts',
+            findRichText: true),
+        findsOneWidget);
+    await tester.tap(find.text('Replace'));
+    await _settle(tester);
+
+    // 7 seeded Peaks + the new one, and Wednesday's Evening warmth is gone
+    // rather than sitting underneath it.
     expect(find.text('Peak'), findsNWidgets(8));
-    expect(find.text('6 – 9 pm'), findsNWidgets(8));
+    expect(find.text('Evening warmth'), findsNWidgets(6));
+  });
+
+  testWidgets('two dayparts cannot start at the same minute', (tester) async {
+    // `app.scheduled_mood_for` ends `order by start_local desc limit 1`, and
+    // between equal start times that order is unspecified — so a duplicate slot
+    // leaves the room picking at random, and swapping between cron ticks.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    await tester.tap(find.text('+ Add'));
+    await _settle(tester);
+    await tester.tap(find.descendant(
+        of: find.byType(PrismBottomSheet), matching: find.text('Wed')));
+    await _settle(tester);
+    await tester.tap(find.text('Add daypart'));
+    await _settle(tester);
+
+    // Declining leaves both the existing daypart and the plan untouched.
+    expect(find.text('Replace what starts at 6:00 pm?'), findsOneWidget);
+    await tester.tap(find.text('Keep both times free'));
+    await _settle(tester);
+
+    expect(find.text('Evening warmth'), findsNWidgets(7));
+    expect(find.text('Replace what starts at 6:00 pm?'), findsNothing);
   });
 
   testWidgets('H-08 a daypart that ends before it starts cannot be saved',
