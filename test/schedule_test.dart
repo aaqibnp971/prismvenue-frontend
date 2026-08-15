@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -134,6 +136,62 @@ void main() {
     expect(find.text('Evening warmth'), findsNWidgets(6));
   });
 
+  testWidgets('a time can be typed instead of dialled', (tester) async {
+    // The dial is quick for "around 8" and slow for "23:05 exactly", which is
+    // the case that turns up when somebody is copying a rota.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    await tester.tap(find.text('+ Add'));
+    await _settle(tester);
+    await tester.tap(find.text('6:00 pm')); // the Starts field
+    await _settle(tester);
+
+    // Two fields: hour, then minutes.
+    final fields = find.byType(TextField);
+    await tester.enterText(fields.at(0), '11');
+    // Moving to the next field blurs the first, which is what commits it —
+    // typing and then reaching straight for Set must not save the old value.
+    await tester.enterText(fields.at(1), '05');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await _settle(tester);
+
+    expect(find.text('Set 11:05 PM'), findsOneWidget);
+  });
+
+  testWidgets('an out-of-range hour reverts instead of being coerced',
+      (tester) async {
+    // Turning 47 into 4, or into 11, is a worse answer than leaving the time
+    // alone: both are silently wrong, and this sheet decides what a room plays.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    await tester.tap(find.text('+ Add'));
+    await _settle(tester);
+    await tester.tap(find.text('6:00 pm'));
+    await _settle(tester);
+
+    await tester.enterText(find.byType(TextField).at(0), '47');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await _settle(tester);
+
+    expect(find.text('Set 6:00 PM'), findsOneWidget);
+  });
+
+  testWidgets('the grid covers the whole day, not just open hours',
+      (tester) async {
+    // A daypart may legitimately start at 2am. While the grid ran from the
+    // venue's opening hour, those blocks were clamped against the edge —
+    // visible as a sliver, undraggable, and unplaceable to begin with.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    // 12am and 2am are outside the 7am–11pm open window, and the ruler labels
+    // them, so the axis genuinely reaches them.
+    expect(find.text('12a'), findsWidgets);
+    expect(find.text('2a'), findsWidgets);
+  });
+
   testWidgets('two dayparts cannot start at the same minute', (tester) async {
     // `app.scheduled_mood_for` ends `order by start_local desc limit 1`, and
     // between equal start times that order is unspecified — so a duplicate slot
@@ -251,7 +309,11 @@ void main() {
     // first block is 7 - 11 am; drag it two hours later.
     final block = find.text('7 – 11 am').first;
     final gridWidth = tester.getSize(find.byType(WeekGrid)).width;
-    final pxPerHour = (gridWidth - 46) / 16; // 7-23 open hours, minus the gutter
+    // The whole day, not the open-hours window — and never finer than the
+    // floor at which the grid starts scrolling instead of squeezing. Same
+    // expression the widget uses; a drag is measured in pixels, so this has to
+    // agree with it exactly.
+    final pxPerHour = math.max((gridWidth - 46) / 24, 46.0);
 
     final gesture = await tester.startGesture(tester.getCenter(block));
     await tester.pump(const Duration(milliseconds: 600)); // arm the long-press

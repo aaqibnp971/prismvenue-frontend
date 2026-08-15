@@ -64,6 +64,16 @@ class _TimeDialSheetState extends State<TimeDialSheet> {
   late final FixedExtentScrollController _wheel =
       FixedExtentScrollController(initialItem: _minute ~/ _step);
 
+  // The typed mirror of [_hour] and [_minute]. Held in controllers rather than
+  // rebuilt from state on every frame, because rebuilding a TextField's text
+  // while it has focus fights the caret.
+  late final TextEditingController _hourField =
+      TextEditingController(text: '$_display12');
+  late final TextEditingController _minuteField =
+      TextEditingController(text: _mm);
+  final _hourFocus = FocusNode();
+  final _minuteFocus = FocusNode();
+
   int get _step => widget.minuteStep.clamp(1, 60);
   bool get _hasMinutes => _step < 60;
 
@@ -81,9 +91,60 @@ class _TimeDialSheetState extends State<TimeDialSheet> {
   String get _label => '$_display12:$_mm ${_pm ? 'PM' : 'AM'}';
 
   @override
+  void initState() {
+    super.initState();
+    // Commit on blur as well as on submit. Typing 9 and tapping Set without
+    // leaving the field would otherwise save the old hour, which is the
+    // silent-wrong-value failure this sheet exists to avoid.
+    _hourFocus.addListener(() {
+      if (!_hourFocus.hasFocus) _commitHour();
+    });
+    _minuteFocus.addListener(() {
+      if (!_minuteFocus.hasFocus) _commitMinute();
+    });
+  }
+
+  @override
   void dispose() {
     _wheel.dispose();
+    _hourField.dispose();
+    _minuteField.dispose();
+    _hourFocus.dispose();
+    _minuteFocus.dispose();
     super.dispose();
+  }
+
+  /// Pushes state back into the fields after the slider, wheel or a chip moves.
+  void _syncFields() {
+    _hourField.text = '$_display12';
+    _minuteField.text = _mm;
+  }
+
+  /// 12-hour, because that is what the field shows and what the AM/PM toggle
+  /// beside it means. Out-of-range or unparseable input reverts rather than
+  /// being coerced: silently turning 47 into 4 or 11 is a worse answer than
+  /// leaving the time alone and letting someone look at it.
+  void _commitHour() {
+    final typed = int.tryParse(_hourField.text.trim());
+    if (typed != null && typed >= 1 && typed <= 12) {
+      final base = typed % 12;
+      setState(() => _hour = _pm ? base + 12 : base);
+    }
+    _syncFields();
+  }
+
+  /// Snapped onto the wheel's grid so the two controls cannot disagree — with
+  /// a 5-minute step, typing :07 gives :05 and the wheel moves there.
+  void _commitMinute() {
+    final typed = int.tryParse(_minuteField.text.trim());
+    if (typed != null && typed >= 0 && typed <= 59) {
+      final snapped = _snap(typed);
+      setState(() => _minute = snapped);
+      if (_hasMinutes && _wheel.hasClients) {
+        _wheel.jumpToItem(snapped ~/ _step);
+      }
+    }
+    _syncFields();
   }
 
   @override
@@ -97,10 +158,16 @@ class _TimeDialSheetState extends State<TimeDialSheet> {
         selected: _pm ? 1 : 0,
         pill: true,
         itemPadding: const EdgeInsets.symmetric(vertical: 6, horizontal: 14),
-        onChanged: (i) => setState(() {
-          if (i == 0 && _pm) _hour -= 12;
-          if (i == 1 && !_pm) _hour += 12;
-        }),
+        onChanged: (i) {
+          setState(() {
+            if (i == 0 && _pm) _hour -= 12;
+            if (i == 1 && !_pm) _hour += 12;
+          });
+          // The field shows a 12-hour number, so flipping the meridiem does
+          // not change the digits — but _commitHour reads the toggle, and a
+          // stale field would fight the next edit.
+          _syncFields();
+        },
       ),
       primaryLabel: 'Set $_label',
       onPrimary: widget.onSet == null
@@ -109,16 +176,40 @@ class _TimeDialSheetState extends State<TimeDialSheet> {
       onCancel: widget.onCancel,
       children: [
         const SizedBox(height: 18),
-        // Readout: "7:00" 58/800 + "AM" 22/700 textSecondary.
+        // Readout: "7:00" 58/800 + "AM" 22/700 textSecondary — and typable.
+        //
+        // The dial is quick for "somewhere around 8" and slow for "23:05
+        // exactly", which is the case that actually turns up: a manager
+        // copying a time off a rota does not want to hunt for it on a track.
+        // The numerals were already the biggest thing on the sheet, so they
+        // become the field rather than growing a second one beside it.
         Center(
           child: Row(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Text('$_display12:$_mm',
+              _NumeralField(
+                controller: _hourField,
+                focusNode: _hourFocus,
+                width: 96,
+                align: TextAlign.right,
+                semanticLabel: 'Hour',
+                onSubmitted: _commitHour,
+                onEditingComplete: _commitHour,
+              ),
+              Text(':',
                   style: PrismType.numeralDial
                       .copyWith(color: palette.textPrimary)),
+              _NumeralField(
+                controller: _minuteField,
+                focusNode: _minuteFocus,
+                width: 96,
+                align: TextAlign.left,
+                semanticLabel: 'Minutes',
+                onSubmitted: _commitMinute,
+                onEditingComplete: _commitMinute,
+              ),
               const SizedBox(width: 8),
               Text(_pm ? 'PM' : 'AM',
                   style: PrismType.body.copyWith(
@@ -131,7 +222,10 @@ class _TimeDialSheetState extends State<TimeDialSheet> {
         const SizedBox(height: 18),
         _DialSlider(
           hour: _hour,
-          onChanged: (h) => setState(() => _hour = h),
+          onChanged: (h) {
+            setState(() => _hour = h);
+            _syncFields();
+          },
         ),
         const SizedBox(height: 6),
         // Tick labels under the track.
@@ -162,7 +256,10 @@ class _TimeDialSheetState extends State<TimeDialSheet> {
             controller: _wheel,
             values: _minuteValues,
             selected: _minute,
-            onChanged: (m) => setState(() => _minute = m),
+            onChanged: (m) {
+              setState(() => _minute = m);
+              _syncFields();
+            },
           ),
         ],
       ],
@@ -174,7 +271,10 @@ class _TimeDialSheetState extends State<TimeDialSheet> {
     final target = _pm ? h12 + 12 : h12;
     final on = _hour == target;
     return GestureDetector(
-      onTap: () => setState(() => _hour = target),
+      onTap: () {
+        setState(() => _hour = target);
+        _syncFields();
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 9),
         alignment: Alignment.center,
@@ -187,6 +287,67 @@ class _TimeDialSheetState extends State<TimeDialSheet> {
             style: PrismType.button.copyWith(
                 fontSize: 12,
                 color: on ? palette.accentText : palette.textSecondary)),
+      ),
+    );
+  }
+}
+
+/// One half of the big readout, as an editable field.
+///
+/// Styled to be indistinguishable from the numerals it replaces: no border, no
+/// fill, no underline. It is the display until you tap it, which is the point —
+/// growing a second, smaller "or type it here" input beside a 58pt readout
+/// would have said the big number was not the real one.
+class _NumeralField extends StatelessWidget {
+  const _NumeralField({
+    required this.controller,
+    required this.focusNode,
+    required this.width,
+    required this.align,
+    required this.semanticLabel,
+    required this.onSubmitted,
+    required this.onEditingComplete,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+
+  /// Fixed, so the colon between the two halves does not slide about as the
+  /// digits change.
+  final double width;
+  final TextAlign align;
+  final String semanticLabel;
+  final VoidCallback onSubmitted;
+  final VoidCallback onEditingComplete;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = Theme.of(context).extension<PrismPalette>()!;
+    return SizedBox(
+      width: width,
+      child: TextField(
+        controller: controller,
+        focusNode: focusNode,
+        textAlign: align,
+        keyboardType: TextInputType.number,
+        // Selects the whole value on focus, so typing replaces rather than
+        // appending to it — "9" after tapping 11 should be 9, not 119.
+        onTap: () => controller.selection = TextSelection(
+            baseOffset: 0, extentOffset: controller.text.length),
+        onSubmitted: (_) => onSubmitted(),
+        onEditingComplete: onEditingComplete,
+        style: PrismType.numeralDial.copyWith(color: palette.textPrimary),
+        cursorColor: palette.accent,
+        decoration: InputDecoration(
+          isDense: true,
+          contentPadding: EdgeInsets.zero,
+          border: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          labelText: null,
+          hintText: null,
+          counterText: '',
+        ),
       ),
     );
   }

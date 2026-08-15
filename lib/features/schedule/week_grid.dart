@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
@@ -76,75 +78,111 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
 
   static const _dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   static const _labelWidth = 46.0;
+  static const _rulerHeight = 14.0;
   static const _rowGap = 5.0;
+
+  /// The grid always spans the whole day. A daypart may legitimately start at
+  /// 2am — a late bar closing down, a hotel lobby that never shuts — and while
+  /// the grid ran from the venue's opening hour to its closing one, those
+  /// blocks were clamped to the edge: visible as a sliver at 7am, un-draggable,
+  /// and impossible to place in the first place.
+  ///
+  /// Open hours are still shown, as shading rather than as bounds, so the plan
+  /// keeps the context it had.
+  static const _dayHours = 24;
+
+  /// Below this the columns stop being aimable and the grid scrolls instead.
+  /// 24 hours across a phone is 16pt an hour, which is narrower than a
+  /// fingertip and far narrower than the shortest daypart anyone would draw.
+  static const _minPxPerHour = 46.0;
 
   @override
   Widget build(BuildContext context) {
     final palette = Theme.of(context).extension<PrismPalette>()!;
     final hours = ref.watch(openHoursProvider).value ?? const OpenHours();
-    // A zero or inverted window would divide by zero below; fall back to the
-    // published default rather than rendering nothing.
-    final openHour = hours.closeHour > hours.openHour ? hours.openHour : 7;
-    final closeHour = hours.closeHour > hours.openHour ? hours.closeHour : 23;
-    final span = closeHour - openHour;
+    // Only for the shading now — a zero or inverted window shades nothing
+    // rather than dividing by zero, because it no longer sets the geometry.
+    final openHour = hours.closeHour > hours.openHour ? hours.openHour : 0;
+    final closeHour = hours.closeHour > hours.openHour ? hours.closeHour : 24;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _HourRuler(openHour: openHour, closeHour: closeHour),
-        const SizedBox(height: 6),
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                width: _labelWidth,
-                child: Column(
-                  children: [
-                    for (var day = 0; day < 7; day++)
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            '${_dayNames[day]} '
-                            '${widget.weekStart.add(Duration(days: day)).day}',
-                            style: PrismType.labelCaps
-                                .copyWith(color: palette.textSecondary),
-                          ),
-                        ),
+    return LayoutBuilder(builder: (context, outer) {
+      final available = outer.maxWidth - _labelWidth;
+      final pxPerHour =
+          math.max(available / _dayHours, _minPxPerHour);
+      final gridWidth = pxPerHour * _dayHours;
+
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Pinned outside the scroll view: losing which row is Tuesday while
+          // panning to 2am would make the grid unreadable.
+          SizedBox(
+            width: _labelWidth,
+            child: Column(
+              children: [
+                const SizedBox(height: _rulerHeight + 6),
+                for (var day = 0; day < 7; day++)
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        '${_dayNames[day]} '
+                        '${widget.weekStart.add(Duration(days: day)).day}',
+                        style: PrismType.labelCaps
+                            .copyWith(color: palette.textSecondary),
                       ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            // Ruler and grid inside ONE scroll view, so the hour labels can
+            // never drift out of step with the blocks under them.
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                width: gridWidth,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _HourRuler(pxPerHour: pxPerHour),
+                    const SizedBox(height: 6),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final rowHeight = constraints.maxHeight / 7;
+                          return Stack(
+                            key: _gridKey,
+                            children: [
+                              _ClosedHours(
+                                openHour: openHour,
+                                closeHour: closeHour,
+                                pxPerHour: pxPerHour,
+                              ),
+                              _GridLines(
+                                span: _dayHours,
+                                pxPerHour: pxPerHour,
+                                rowHeight: rowHeight,
+                              ),
+                              for (final daypart in widget.plan)
+                                _block(daypart, pxPerHour, rowHeight, palette),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
                   ],
                 ),
               ),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final pxPerHour = constraints.maxWidth / span;
-                    final rowHeight = constraints.maxHeight / 7;
-                    return Stack(
-                      key: _gridKey,
-                      children: [
-                        _GridLines(
-                          span: span,
-                          pxPerHour: pxPerHour,
-                          rowHeight: rowHeight,
-                        ),
-                        for (final daypart in widget.plan)
-                          _block(daypart, openHour, closeHour, pxPerHour,
-                              rowHeight, palette),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ],
-    );
+        ],
+      );
+    });
   }
 
-  Widget _block(Daypart daypart, int openHour, int closeHour, double pxPerHour,
-      double rowHeight, PrismPalette palette) {
+  Widget _block(Daypart daypart, double pxPerHour, double rowHeight,
+      PrismPalette palette) {
     // The ghost stands in for the block it belongs to, so the thing under the
     // finger is the thing that moves.
     final ghost = _ghost?.id == daypart.id ? _ghost : null;
@@ -159,11 +197,11 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
     // along untouched, so these come from the model either way.
     final startAt = startHour + daypart.startMinute / 60.0;
     final endAt = endHour + daypart.endMinute / 60.0;
-    // Blocks outside the open-hours window are clamped into view rather than
-    // hidden — an invisible block is one a manager cannot fix.
-    final left =
-        (startAt - openHour).clamp(0, closeHour - openHour) * pxPerHour;
-    final right = (endAt - openHour).clamp(0, closeHour - openHour) * pxPerHour;
+    // No clamping any more: the grid covers the whole day, so every block sits
+    // where it actually is. A 2am start used to be squashed against the 7am
+    // edge, which made it both unreadable and undraggable.
+    final left = startAt.clamp(0, _dayHours) * pxPerHour;
+    final right = endAt.clamp(0, _dayHours) * pxPerHour;
 
     // While dragging, the label has to come from the dragged position, not the
     // model — and Daypart.copyWith drops serverRangeLabel, so formatting it
@@ -205,8 +243,7 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
           // a venue, where this is used one-handed.
           onLongPressStart: (d) => _armDrag(daypart, d.globalPosition),
           onLongPressMoveUpdate: (d) =>
-              _updateDrag(d.globalPosition, openHour, closeHour, pxPerHour,
-                  rowHeight),
+              _updateDrag(d.globalPosition, pxPerHour, rowHeight),
           onLongPressEnd: (_) => _endDrag(),
           onLongPressCancel: _cancelDrag,
           child: AnimatedContainer(
@@ -297,8 +334,7 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
     });
   }
 
-  void _updateDrag(Offset globalPosition, int openHour, int closeHour,
-      double pxPerHour, double rowHeight) {
+  void _updateDrag(Offset globalPosition, double pxPerHour, double rowHeight) {
     final origin = _dragOrigin;
     final daypart = _dragging;
     if (origin == null || daypart == null) return;
@@ -317,7 +353,7 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
     var start = daypart.startHour + hourSteps;
     // Clamp by the whole block so a drag against the edge stops rather than
     // silently squashing the daypart.
-    start = start.clamp(openHour, closeHour - duration).toInt();
+    start = start.clamp(0, _dayHours - duration).toInt();
     final day = (daypart.dayIndex + daySteps).clamp(0, 6).toInt();
 
     if (hourSteps != _lastHourStep) {
@@ -405,13 +441,11 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
 
   /// The keyboard/VoiceOver equivalent of a drag. Refuses the same overlaps.
   Future<void> _nudge(Daypart daypart, {int hours = 0, int days = 0}) async {
-    final hoursValue = ref.read(openHoursProvider).value ?? const OpenHours();
-    final openHour = hoursValue.closeHour > hoursValue.openHour ? hoursValue.openHour : 7;
-    final closeHour = hoursValue.closeHour > hoursValue.openHour ? hoursValue.closeHour : 23;
+
 
     final duration = daypart.endHour - daypart.startHour;
     final start =
-        (daypart.startHour + hours).clamp(openHour, closeHour - duration).toInt();
+        (daypart.startHour + hours).clamp(0, _dayHours - duration).toInt();
     final day = (daypart.dayIndex + days).clamp(0, 6).toInt();
     if (start == daypart.startHour && day == daypart.dayIndex) return;
     if (_overlaps(daypart.id, day, start, start + duration)) {
@@ -437,47 +471,85 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
 
 /// Hour labels across the top. Every two hours — one per hour is unreadable at
 /// this width and the gridlines already carry the finer rhythm.
+///
+/// Lives inside the scroll view now, sharing its width with the grid, so the
+/// labels and the blocks cannot drift apart while panning.
 class _HourRuler extends StatelessWidget {
-  const _HourRuler({required this.openHour, required this.closeHour});
+  const _HourRuler({required this.pxPerHour});
 
-  final int openHour;
-  final int closeHour;
+  final double pxPerHour;
 
   @override
   Widget build(BuildContext context) {
     final palette = Theme.of(context).extension<PrismPalette>()!;
-    final span = closeHour - openHour;
-    return Row(
-      children: [
-        const SizedBox(width: _WeekGridState._labelWidth),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final pxPerHour = constraints.maxWidth / span;
-              return SizedBox(
-                height: 14,
-                child: Stack(
-                  children: [
-                    for (var h = openHour; h <= closeHour; h += 2)
-                      Positioned(
-                        left: (h - openHour) * pxPerHour,
-                        child: Text(_hourLabel(h),
-                            style: PrismType.microHelper
-                                .copyWith(color: palette.textTertiary)),
-                      ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+    return SizedBox(
+      height: _WeekGridState._rulerHeight,
+      child: Stack(
+        children: [
+          // Stops at 22 rather than 24: a label at the far edge would be
+          // clipped by the scroll view's end, and "12a" twice in one ruler
+          // reads as a mistake.
+          for (var h = 0; h <= 22; h += 2)
+            Positioned(
+              left: h * pxPerHour,
+              child: Text(_hourLabel(h),
+                  style: PrismType.microHelper
+                      .copyWith(color: palette.textTertiary)),
+            ),
+        ],
+      ),
     );
   }
 
   static String _hourLabel(int h) {
     final h12 = h % 12 == 0 ? 12 : h % 12;
     return '$h12${h < 12 ? 'a' : 'p'}';
+  }
+}
+
+/// The hours the venue is shut, behind everything else.
+///
+/// The grid used to simply stop at the open and close hours. Showing the whole
+/// day instead means a 2am daypart is placeable and legible, but it also loses
+/// the at-a-glance sense of when the room is actually in use — so the closed
+/// stretch is dimmed rather than removed. Purely informational: a daypart
+/// outside it is perfectly legal, which is the point of showing it at all.
+class _ClosedHours extends StatelessWidget {
+  const _ClosedHours({
+    required this.openHour,
+    required this.closeHour,
+    required this.pxPerHour,
+  });
+
+  final int openHour;
+  final int closeHour;
+  final double pxPerHour;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = Theme.of(context).extension<PrismPalette>()!;
+    if (openHour <= 0 && closeHour >= 24) return const SizedBox.shrink();
+    final shade = palette.tile2.withValues(alpha: .35);
+    return Stack(
+      children: [
+        if (openHour > 0)
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: openHour * pxPerHour,
+            child: ColoredBox(color: shade),
+          ),
+        if (closeHour < 24)
+          Positioned(
+            left: closeHour * pxPerHour,
+            top: 0,
+            bottom: 0,
+            width: (24 - closeHour) * pxPerHour,
+            child: ColoredBox(color: shade),
+          ),
+      ],
+    );
   }
 }
 
