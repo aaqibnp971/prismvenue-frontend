@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/models/zone.dart';
 import '../data/repositories/venue_repo.dart';
+import 'local_playback.dart';
 import 'session.dart';
 
 /// The §2.0 top-bar identity: venue name, context line, and the green dot.
@@ -46,7 +47,11 @@ final venueHeaderProvider = Provider.autoDispose<VenueHeader>((ref) {
     return (title: context.venueName, subtitle: zoneName, statusDot: false);
   }
 
-  final online = zone.status != ZoneStatus.offline;
+  // The same correction the portfolio applies: a room this app is itself
+  // playing cannot honestly be labelled offline in the very chrome above the
+  // hero card that is showing its mood. See app/local_playback.dart.
+  final online =
+      statusOf(zone, ref.watch(locallyPlayingZoneProvider)) != ZoneStatus.offline;
   return (
     title: context.venueName,
     subtitle: '$zoneName · ${online ? 'online' : 'offline'}',

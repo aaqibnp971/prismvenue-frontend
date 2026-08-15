@@ -27,7 +27,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"prism_venues", origin, size)) {
+  // The product name, not the pubspec package name. This is what Windows shows
+  // in the title bar, the taskbar tooltip and Alt-Tab; "prism_venues" is an
+  // implementation detail leaking onto a venue's screen. Matches
+  // MaterialApp.title, which is what the app calls itself everywhere else.
+  if (!window.Create(L"Prism Venues", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

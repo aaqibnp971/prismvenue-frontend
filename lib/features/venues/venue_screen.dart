@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/local_playback.dart';
 import '../../app/session.dart';
 import '../../app/venue_header.dart';
 import '../../data/models/zone.dart';
@@ -36,7 +37,14 @@ class VenueScreen extends ConsumerWidget {
     final user = ref.watch(sessionProvider);
     if (user == null) return const SizedBox.shrink(); // router redirects
     final palette = Theme.of(context).extension<PrismPalette>()!;
-    final venue = ref.watch(venueProvider(venueId)).value;
+    // A room this app is playing is demonstrably not offline, whatever the
+    // never-written `devices.online` says — see app/local_playback.dart.
+    // Nullability is preserved: null still means "could not be loaded", which
+    // is the ErrorState below, not an empty venue.
+    final loaded = ref.watch(venueProvider(venueId)).value;
+    final venue = loaded == null
+        ? null
+        : withLocalPlayback(loaded, ref.watch(locallyPlayingZoneProvider));
 
     // §2.0 status line, bound to the routed venue. "online" is connectivity:
     // an off-schedule zone is still online; an offline zone flips the line

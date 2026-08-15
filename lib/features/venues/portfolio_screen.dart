@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/local_playback.dart';
 import '../../app/session.dart';
 import '../../data/models/venue.dart';
 import '../../data/models/zone.dart';
@@ -28,8 +29,14 @@ class PortfolioScreen extends ConsumerWidget {
     final user = ref.watch(sessionProvider);
     if (user == null) return const SizedBox.shrink(); // router redirects
     final palette = Theme.of(context).extension<PrismPalette>()!;
-    final venues = needsAttentionFirst(
-        ref.watch(venuesProvider).value ?? const <Venue>[]);
+    // Corrected BEFORE sorting: a room this app is audibly playing must not be
+    // hoisted to the top of "Needs attention" as offline. See
+    // app/local_playback.dart.
+    final local = ref.watch(locallyPlayingZoneProvider);
+    final venues = needsAttentionFirst([
+      for (final v in ref.watch(venuesProvider).value ?? const <Venue>[])
+        withLocalPlayback(v, local),
+    ]);
 
     return Scaffold(
       body: Column(
