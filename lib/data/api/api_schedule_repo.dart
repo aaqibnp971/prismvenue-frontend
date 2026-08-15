@@ -18,9 +18,19 @@ class ApiScheduleRepo implements ScheduleRepo {
   final ApiClient _client;
   final ApiScope _scope;
 
+  /// Polled, unlike every other stream here.
+  ///
+  /// `now_index` and `next_index` are computed from the venue's clock, so this
+  /// response goes stale on its own — no mutation involved. 30s keeps the rail
+  /// within half a minute of the hero, which polls now-playing every 5s and
+  /// therefore moved to the next daypart while the rail sat still.
+  ///
+  /// Not faster: the executor itself only runs once a minute (migration 010),
+  /// so a tighter poll would ask a question whose answer cannot have changed.
   late final _today = Watchable<TodaySchedule>(
     _fetchToday,
     scopeKey: _scope.zoneKey,
+    refreshInterval: const Duration(seconds: 30),
   );
   late final _mode = Watchable<ScheduleMode>(
     _fetchMode,

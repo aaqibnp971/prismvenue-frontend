@@ -26,7 +26,7 @@ import 'dart:async';
 /// until then this is single-client-correct, which is what the settings and
 /// venue screens actually need.
 class Watchable<T> {
-  Watchable(this._fetch, {this.scopeKey});
+  Watchable(this._fetch, {this.scopeKey, this.refreshInterval});
 
   final Future<T> Function() _fetch;
 
@@ -35,11 +35,28 @@ class Watchable<T> {
   /// than served for the wrong room.
   final String? Function()? scopeKey;
 
+  /// Refetch this often while anybody is listening, or null to only ever
+  /// refresh on a mutation.
+  ///
+  /// For values the SERVER derives from the current time, which therefore go
+  /// stale on their own with nothing on this side changing. `GET /today`'s
+  /// `now_index` is the case that named this: it is computed from the venue's
+  /// clock, the per-minute cron moves the room on to the next daypart, and the
+  /// Floor hero follows within 5s because now-playing polls — while the rail
+  /// beside it kept whatever it fetched when the screen opened. The room played
+  /// Peak under a rail insisting Morning calm was current.
+  ///
+  /// Only for the time-derived ones. Everything else here changes when someone
+  /// changes it, and already refreshes then.
+  final Duration? refreshInterval;
+
   final _controller = StreamController<T>.broadcast();
 
   T? _cached;
   String? _cachedScope;
   Future<T>? _inFlight;
+  Timer? _ticker;
+  var _listeners = 0;
 
   /// Emits the current value, then every change.
   ///
@@ -63,6 +80,8 @@ class Watchable<T> {
     StreamSubscription<T>? relay;
 
     out.onListen = () {
+      _listeners++;
+      _startTicker();
       relay = _controller.stream.listen(
         (value) {
           if (!out.isClosed) out.add(value);
@@ -82,10 +101,34 @@ class Watchable<T> {
       );
     };
     out.onCancel = () async {
+      // Bookkeeping first, teardown second. Behind the await it lands a
+      // microtask late, and a screen that unmounts and remounts in that window
+      // leaves the count above zero forever — a timer polling a zone nobody is
+      // looking at, for the life of the process.
+      _listeners--;
+      if (_listeners <= 0) {
+        _listeners = 0;
+        _ticker?.cancel();
+        _ticker = null;
+      }
       await relay?.cancel();
       relay = null;
     };
     return out.stream;
+  }
+
+  /// Runs only while something is watching, so a backgrounded screen costs
+  /// nothing — the providers are `autoDispose`, so navigating away really does
+  /// drop the last listener.
+  void _startTicker() {
+    final interval = refreshInterval;
+    if (interval == null || _ticker != null) return;
+    _ticker = Timer.periodic(interval, (_) {
+      // Swallowed: a refetch that fails is exactly as informative as not
+      // having refetched, and killing the timer over one bad response would
+      // freeze the value again for the life of the screen.
+      refresh().catchError((Object _) {});
+    });
   }
 
   /// The current value, fetching at most once even if several subscribers
@@ -130,5 +173,9 @@ class Watchable<T> {
     if (!_controller.isClosed) _controller.add(value);
   }
 
-  void dispose() => _controller.close();
+  void dispose() {
+    _ticker?.cancel();
+    _ticker = null;
+    _controller.close();
+  }
 }

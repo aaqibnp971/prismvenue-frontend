@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -309,6 +310,71 @@ void main() {
       expect(plan.single.rangeLabel, '7 – 11 am');
       expect(plan.single.startHour, 7);
       expect(plan.single.endHour, 11);
+    });
+
+    test('the rail refetches on its own as the clock moves', () {
+      // now_index is derived from the VENUE's clock, so this response goes
+      // stale with nothing on this side changing. The Floor hero polls
+      // now-playing every 5s and moved on to the next daypart while the rail
+      // beside it kept whatever it fetched when the screen opened — the room
+      // played Peak under a rail insisting Morning calm was current.
+      //
+      // fakeAsync because the real interval is 30s: shortening it for the test
+      // would leave the shipped number untested, which is the number that
+      // matters.
+      fakeAsync((async) {
+        routes['/today'] = {
+          'entries': [
+            {'time_label': '12:00', 'mood_id': 'morning-calm'},
+            {'time_label': '1:15', 'mood_id': 'peak'},
+          ],
+          'now_index': 0,
+          'next_index': 1,
+          'auto': true,
+        };
+        final repo = ApiScheduleRepo(buildClient(), scope());
+
+        final seen = <int>[];
+        final sub = repo.watchToday().listen((t) => seen.add(t.nowIndex));
+        async.elapse(const Duration(milliseconds: 10));
+        expect(seen, [0]);
+
+        // The clock crosses 1:15 and the server's answer changes. Nothing here
+        // wrote anything, so only a timer can notice.
+        routes['/today'] = {
+          'entries': [
+            {'time_label': '12:00', 'mood_id': 'morning-calm'},
+            {'time_label': '1:15', 'mood_id': 'peak'},
+          ],
+          'now_index': 1,
+          'next_index': -1,
+          'auto': true,
+        };
+
+        async.elapse(const Duration(seconds: 31));
+        expect(seen.last, 1,
+            reason: 'the rail must move to the daypart that is current');
+        sub.cancel();
+      });
+    });
+
+    test('the ticker stops when nothing is watching', () {
+      // autoDispose providers drop the last listener on navigating away, and a
+      // timer that outlived it would poll a zone nobody is looking at.
+      fakeAsync((async) {
+        routes['/today'] = {'entries': [], 'now_index': -1, 'auto': true};
+        final repo = ApiScheduleRepo(buildClient(), scope());
+
+        final sub = repo.watchToday().listen((_) {});
+        async.elapse(const Duration(milliseconds: 10));
+        sub.cancel();
+        async.elapse(const Duration(milliseconds: 10));
+
+        final after = sent.length;
+        async.elapse(const Duration(minutes: 3));
+        expect(sent.length, after,
+            reason: 'no requests once nobody is listening');
+      });
     });
 
     test('sends hours and never sends the label', () async {
