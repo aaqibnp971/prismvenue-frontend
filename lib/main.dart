@@ -67,7 +67,10 @@ ProviderContainer buildPrismContainer({
       return repo;
     }),
     venueRepoProvider.overrideWith((ref) {
-      final repo = ApiVenueRepo(ref.watch(apiClientProvider));
+      final repo = ApiVenueRepo(
+        ref.watch(apiClientProvider),
+        ref.watch(apiScopeProvider),
+      );
       ref.onDispose(repo.dispose);
       return repo;
     }),

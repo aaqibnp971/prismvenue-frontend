@@ -52,11 +52,11 @@ class ApiSettingsRepo implements SettingsRepo {
 
   late final _guardrails = Watchable<Guardrails>(
     _fetchGuardrails,
-    scopeKey: _scope.zoneId,
+    scopeKey: _scope.zoneKey,
   );
   late final _openHours = Watchable<OpenHours>(
     _fetchOpenHours,
-    scopeKey: _scope.venueId,
+    scopeKey: _scope.venueKey,
   );
 
   // --- Guardrails ------------------------------------------------------------

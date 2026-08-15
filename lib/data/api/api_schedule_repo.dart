@@ -20,15 +20,15 @@ class ApiScheduleRepo implements ScheduleRepo {
 
   late final _today = Watchable<TodaySchedule>(
     _fetchToday,
-    scopeKey: _scope.zoneId,
+    scopeKey: _scope.zoneKey,
   );
   late final _mode = Watchable<ScheduleMode>(
     _fetchMode,
-    scopeKey: _scope.zoneId,
+    scopeKey: _scope.zoneKey,
   );
   late final _plan = Watchable<List<Daypart>>(
     _fetchPlan,
-    scopeKey: _scope.zoneId,
+    scopeKey: _scope.zoneKey,
   );
 
   @override

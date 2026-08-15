@@ -3,6 +3,7 @@ import '../models/zone.dart';
 import '../repositories/venue_repo.dart';
 import 'api_client.dart';
 import 'api_exception.dart';
+import 'api_scope.dart';
 import 'watchable.dart';
 
 /// `VenueRepo` against the real API.
@@ -20,15 +21,28 @@ import 'watchable.dart';
 /// **The list and the single-venue view refresh together.** `venue_screen` and
 /// `portfolio_screen` can be showing the same zone; a quick-fix on one must
 /// move the other. Every mutation refreshes both.
+///
+/// **Everything here is keyed to the account.** This is the one repository
+/// whose data is scoped to the signed-in user rather than to a room, so it is
+/// also the one where a bare cache outlives its session: sign out, sign in as
+/// somebody else, and the portfolio kept serving the previous account's venues
+/// until a mutation happened to call `refresh()`. `ApiScope.accountKey` is what
+/// makes the cache drop on a sign-in instead.
 class ApiVenueRepo implements VenueRepo {
-  ApiVenueRepo(this._client);
+  ApiVenueRepo(this._client, this._scope);
 
   final ApiClient _client;
+  final ApiScope _scope;
 
-  late final _venues = Watchable<List<Venue>>(_fetchVenues);
+  late final _venues =
+      Watchable<List<Venue>>(_fetchVenues, scopeKey: _scope.accountKey);
 
   /// One per venue id the app has actually looked at. Kept so a mutation can
   /// push to every live drill-in view, not just the portfolio.
+  ///
+  /// Entries survive a sign-out, and may: each carries the same account key, so
+  /// a venue id that somehow recurs across accounts refetches rather than
+  /// serving the wrong tenant's row.
   final _byId = <String, Watchable<Venue?>>{};
 
   @override
@@ -37,8 +51,11 @@ class ApiVenueRepo implements VenueRepo {
   @override
   Stream<Venue?> watchVenue(String id) => _watchableFor(id).watch();
 
-  Watchable<Venue?> _watchableFor(String id) =>
-      _byId.putIfAbsent(id, () => Watchable<Venue?>(() => _fetchVenue(id)));
+  Watchable<Venue?> _watchableFor(String id) => _byId.putIfAbsent(
+        id,
+        () => Watchable<Venue?>(() => _fetchVenue(id),
+            scopeKey: _scope.accountKey),
+      );
 
   @override
   Future<void> returnZoneToAuto(String venueId, String zoneId) async {

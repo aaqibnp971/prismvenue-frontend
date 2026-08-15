@@ -38,10 +38,10 @@ class ApiPlaybackRepo implements PlaybackRepo {
   final TokenStore _tokens;
   final http.Client _sse;
 
-  late final _now = Watchable<PlaybackState>(_fetchNow, scopeKey: _scope.zoneId);
-  late final _noise = Watchable<int>(_fetchNoise, scopeKey: _scope.zoneId);
+  late final _now = Watchable<PlaybackState>(_fetchNow, scopeKey: _scope.zoneKey);
+  late final _noise = Watchable<int>(_fetchNoise, scopeKey: _scope.zoneKey);
   late final _takeover =
-      Watchable<TakeoverState>(_fetchTakeover, scopeKey: _scope.zoneId);
+      Watchable<TakeoverState>(_fetchTakeover, scopeKey: _scope.zoneKey);
 
   StreamSubscription<String>? _events;
   Timer? _countdown;

@@ -92,7 +92,7 @@ void main() {
     );
     return ApiSettingsRepo(
       client,
-      ApiScope(zoneId: () => zoneId, venueId: () => venueId),
+      ApiScope(zoneId: () => zoneId, venueId: () => venueId, userId: _testUser),
       writeDebounce: writeDebounce,
     );
   }
@@ -309,7 +309,7 @@ void main() {
       );
       final repo = ApiSettingsRepo(
         client,
-        ApiScope(zoneId: () => zoneId, venueId: () => 'v-1'),
+        ApiScope(zoneId: () => zoneId, venueId: () => 'v-1', userId: _testUser),
         writeDebounce: Duration.zero,
       );
 
@@ -423,3 +423,5 @@ void main() {
     });
   });
 }
+
+String? _testUser() => 'u-1';

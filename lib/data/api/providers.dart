@@ -38,4 +38,5 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 final apiScopeProvider = Provider<ApiScope>((ref) => ApiScope(
       zoneId: () => ref.read(currentZoneIdProvider),
       venueId: () => ref.read(currentVenueIdProvider),
+      userId: () => ref.read(sessionProvider)?.id,
     ));

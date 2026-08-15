@@ -42,6 +42,7 @@ void main() {
       );
 
   ApiScope scope() => const ApiScope(
+        userId: _testUser,
         zoneId: _zone,
         venueId: _venue,
       );
@@ -63,9 +64,50 @@ void main() {
         venue('v-red', 'Dockside', [zone('z3', 'Bar', 'offline')]),
       ];
 
-      final venues = await ApiVenueRepo(buildClient()).watchVenues().first;
+      final venues = await ApiVenueRepo(buildClient(), scope()).watchVenues().first;
 
       expect(venues.map((v) => v.name), ['Dockside', 'Marina Café', 'Harbor House']);
+    });
+
+    test('signing in as another account does not serve the first account venues',
+        () async {
+      // The portfolio is the one stream scoped to the ACCOUNT rather than to a
+      // room, so it was the one with no cache key — it survived a sign-out and
+      // kept serving the previous user's venues until some mutation happened to
+      // call refresh(). Two orgs' venue names on screen is the worst shape that
+      // can take.
+      var user = 'u-owner-a';
+      final repo = ApiVenueRepo(
+        buildClient(),
+        ApiScope(zoneId: _zone, venueId: _venue, userId: () => user),
+      );
+
+      routes['/venues'] = [venue('v-a', "A's venue", const [])];
+      expect((await repo.watchVenues().first).map((v) => v.name), ["A's venue"]);
+
+      // Sign out, sign in as somebody else. Same repo instance: it lives in the
+      // root container and is not rebuilt.
+      user = 'u-owner-b';
+      routes['/venues'] = [venue('v-b', "B's venue", const [])];
+
+      expect((await repo.watchVenues().first).map((v) => v.name), ["B's venue"]);
+    });
+
+    test('the drill-in view is account-scoped too', () async {
+      // Same defect one level down: _byId outlives the session, and its entries
+      // are keyed by venue id alone.
+      var user = 'u-owner-a';
+      final repo = ApiVenueRepo(
+        buildClient(),
+        ApiScope(zoneId: _zone, venueId: _venue, userId: () => user),
+      );
+
+      routes['/venues/v-1'] = venue('v-1', "A's venue", const []);
+      expect((await repo.watchVenue('v-1').first)?.name, "A's venue");
+
+      user = 'u-owner-b';
+      routes['/venues/v-1'] = venue('v-1', "B's venue", const []);
+      expect((await repo.watchVenue('v-1').first)?.name, "B's venue");
     });
 
     test('maps every zone status', () async {
@@ -77,7 +119,7 @@ void main() {
         ])
       ];
 
-      final zones = (await ApiVenueRepo(buildClient()).watchVenues().first)
+      final zones = (await ApiVenueRepo(buildClient(), scope()).watchVenues().first)
           .single
           .zones;
 
@@ -93,7 +135,7 @@ void main() {
         venue('v1', 'X', [zone('z1', 'A', 'reticulating-splines')])
       ];
 
-      final zones = (await ApiVenueRepo(buildClient()).watchVenues().first)
+      final zones = (await ApiVenueRepo(buildClient(), scope()).watchVenues().first)
           .single
           .zones;
 
@@ -107,12 +149,12 @@ void main() {
         'error': {'code': 'not_found', 'message': 'That venue was not found.'}
       };
 
-      expect(await ApiVenueRepo(buildClient()).watchVenue('nope').first, isNull);
+      expect(await ApiVenueRepo(buildClient(), scope()).watchVenue('nope').first, isNull);
     });
 
     test('a quick-fix refreshes the portfolio', () async {
       routes['/venues'] = [venue('v1', 'X', [zone('z1', 'A', 'off_schedule')])];
-      final repo = ApiVenueRepo(buildClient());
+      final repo = ApiVenueRepo(buildClient(), scope());
       await repo.watchVenues().first;
 
       await repo.returnZoneToAuto('v1', 'z1');
@@ -128,7 +170,7 @@ void main() {
 
     test('removeZone deletes and refreshes', () async {
       routes['/venues'] = <Object>[];
-      final repo = ApiVenueRepo(buildClient());
+      final repo = ApiVenueRepo(buildClient(), scope());
 
       await repo.removeZone('z1');
 
@@ -417,3 +459,4 @@ void main() {
 
 String? _zone() => 'z-1';
 String? _venue() => 'v-1';
+String? _testUser() => 'u-1';
