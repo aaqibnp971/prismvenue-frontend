@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/roles.dart';
 import '../../app/session.dart';
 import '../../app/venue_header.dart';
 import '../../data/repositories/playback_repo.dart';
@@ -17,6 +18,7 @@ import 'widgets/confirm_auto_dialog.dart';
 import 'widgets/confirm_vibe_dialog.dart';
 import 'widgets/hero_card.dart';
 import 'widgets/mood_grid.dart';
+import 'widgets/no_schedule_dialog.dart';
 
 /// S01 Floor — THE floor-staff home (all roles). Body = row: main column
 /// (padding 15, gap 20: hero card + moods block) + schedule rail (w268
@@ -40,6 +42,17 @@ class FloorScreen extends ConsumerWidget {
     final schedule = ref.watch(todayScheduleProvider);
     final header = ref.watch(venueHeaderProvider);
     if (user == null) return const SizedBox.shrink(); // router redirects
+
+    // Is there anything for Auto to follow today?
+    //
+    // Read off the rail's own data, so the dimmed button and the empty rail
+    // beside it can never disagree. Self-drive is excluded deliberately: there
+    // Prism picks the vibe itself and Auto is meaningful with no dayparts at
+    // all, which is the whole point of S03-1.
+    final todaySchedule = schedule.value;
+    final hasPlanToday = todaySchedule == null ||
+        todaySchedule.selfDrive ||
+        todaySchedule.entries.isNotEmpty;
 
     return Scaffold(
       body: Column(
@@ -118,9 +131,32 @@ class FloorScreen extends ConsumerWidget {
                         // hand-back ("Return to Prism now"), and two competing
                         // controls for the same room is how the dashboard and
                         // the speakers end up disagreeing.
+                        // "Auto" means "follow the schedule", so with nothing
+                        // planned for today it is an offer the app cannot
+                        // keep: desired_mode flips to auto,
+                        // app.scheduled_mood_for returns NULL because no
+                        // daypart covers the moment, and the room carries on
+                        // playing exactly what it was. Dimmed, and the tap is
+                        // answered rather than swallowed.
+                        //
+                        // Reachable more often than it sounds: migration 011
+                        // never merges a forked week with the recurring plan,
+                        // so a zone with a full weekly plan can still have an
+                        // empty Friday.
+                        hasPlanToday: hasPlanToday,
                         onReturnToAuto: takeover.value?.active == true
                             ? null
                             : () async {
+                                if (!hasPlanToday) {
+                                  final open = await showNoScheduleDialog(
+                                    context,
+                                    canEdit: user.role != Role.floor,
+                                  );
+                                  if (open == true && context.mounted) {
+                                    context.go('/schedule');
+                                  }
+                                  return;
+                                }
                                 final confirmed =
                                     await showConfirmAutoDialog(context);
                                 if (confirmed != true) return;

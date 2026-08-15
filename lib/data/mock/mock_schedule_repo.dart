@@ -15,8 +15,14 @@ import '../repositories/schedule_repo.dart';
 /// invisible while the app had no way to change rooms and became actively
 /// misleading once "Open floor" started working on every zone.
 class MockScheduleRepo implements ScheduleRepo {
-  MockScheduleRepo({String? Function()? zoneId})
+  MockScheduleRepo({String? Function()? zoneId, this.emptyToday = false})
       : _zoneId = zoneId ?? (() => null);
+
+  /// Today's rail comes back empty, as it does for a zone whose week is forked
+  /// with nothing on this weekday — migration 011 never merges a fork with the
+  /// recurring plan, so a full weekly plan can still have an empty Friday.
+  /// Exercises the dimmed Auto button and its dialog.
+  final bool emptyToday;
 
   /// Resolved at call time, exactly as `ApiScope` does it, so switching the
   /// session's zone repoints this repository with nothing to rebuild.
@@ -72,7 +78,7 @@ class MockScheduleRepo implements ScheduleRepo {
         auto: true,
         nowIndex: 2,
         selfDrive: _z.mode == ScheduleMode.selfDrive,
-        entries: _todayEntries,
+        entries: emptyToday ? const [] : _todayEntries,
       );
 
   final _todayController = StreamController<TodaySchedule>.broadcast();

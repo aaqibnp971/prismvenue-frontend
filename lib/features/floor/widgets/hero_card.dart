@@ -23,6 +23,7 @@ class HeroCard extends StatelessWidget {
     this.noiseLabel = 'Noise',
     this.takeoverActive = false,
     this.takeOverLabel = 'Take over',
+    this.hasPlanToday = true,
     this.onTogglePause,
     this.onTakeOver,
     this.onReturnToAuto,
@@ -64,6 +65,9 @@ class HeroCard extends StatelessWidget {
 
   /// Label for the S02 button — see [TakeOverButton.label].
   final String takeOverLabel;
+
+  /// Whether Auto has a schedule to return to — see [AutoButton.hasPlan].
+  final bool hasPlanToday;
   final VoidCallback? onTogglePause;
   final VoidCallback? onTakeOver;
 
@@ -128,7 +132,10 @@ class HeroCard extends StatelessWidget {
           stretch ? Expanded(child: button) : button;
       return [
         if (onReturnToAuto != null) ...[
-          fit(AutoButton(active: !state.offSchedule, onTap: onReturnToAuto)),
+          fit(AutoButton(
+              active: !state.offSchedule,
+              hasPlan: hasPlanToday,
+              onTap: onReturnToAuto)),
           const SizedBox(width: 10),
         ],
         fit(TakeOverButton(onTap: onTakeOver, label: takeOverLabel)),

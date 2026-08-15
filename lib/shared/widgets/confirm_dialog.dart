@@ -31,7 +31,13 @@ class ConfirmDialog extends StatelessWidget {
   final InlineSpan body;
 
   final String confirmLabel;
-  final String cancelLabel;
+  /// Null renders a single full-width action.
+  ///
+  /// Every dialog in the app is a real choice, so two buttons is the default.
+  /// An informational one — "nothing is planned for today", shown to floor
+  /// staff who cannot edit the schedule — has only one thing to say, and a
+  /// Cancel beside a Got it is two controls for the same outcome.
+  final String? cancelLabel;
   final VoidCallback? onCancel;
   final VoidCallback? onConfirm;
 
@@ -72,10 +78,12 @@ class ConfirmDialog extends StatelessWidget {
           const SizedBox(height: 18),
           Row(
             children: [
-              Expanded(
-                child: SecondaryButton(label: cancelLabel, onTap: onCancel),
-              ),
-              const SizedBox(width: 10),
+              if (cancelLabel != null) ...[
+                Expanded(
+                  child: SecondaryButton(label: cancelLabel!, onTap: onCancel),
+                ),
+                const SizedBox(width: 10),
+              ],
               Expanded(
                 child: PrimaryButton(label: confirmLabel, onTap: onConfirm),
               ),

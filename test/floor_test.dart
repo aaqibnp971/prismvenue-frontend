@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:prism_venues/data/mock/mock_playback_repo.dart';
 import 'package:prism_venues/data/models/playback_state.dart';
+import 'package:prism_venues/data/mock/mock_schedule_repo.dart';
 import 'package:prism_venues/data/repositories/playback_repo.dart';
+import 'package:prism_venues/data/repositories/schedule_repo.dart';
 import 'package:prism_venues/features/floor/widgets/hero_card.dart';
 import 'package:prism_venues/main.dart';
 import 'package:prism_venues/theme/palette.dart';
@@ -290,6 +292,66 @@ void main() {
     await _settle(tester);
     expect(find.text('Hello!'), findsOneWidget);
   });
+
+  testWidgets('Auto is dimmed and explains itself when today has no plan',
+      (tester) async {
+    // "Auto" means "follow the schedule". With nothing planned for today it is
+    // an offer the app cannot keep: desired_mode flips to auto,
+    // app.scheduled_mood_for returns NULL because no daypart covers the moment,
+    // and the room carries on playing exactly what it was. Seen live on a zone
+    // whose current week was forked with only Mon/Wed filled in.
+    await tester.binding.setSurfaceSize(const Size(1024, 768));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = ProviderContainer(overrides: [
+      playbackRepoProvider.overrideWith((ref) {
+        final repo = MockPlaybackRepo(tickNoise: false);
+        ref.onDispose(repo.dispose);
+        return repo;
+      }),
+      scheduleRepoProvider.overrideWith((ref) {
+        // A custom plan (not self-drive) with nothing on today.
+        final repo = MockScheduleRepo(emptyToday: true);
+        ref.onDispose(repo.dispose);
+        return repo;
+      }),
+    ]);
+    addTearDown(container.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+        container: container, child: const PrismVenuesApp()));
+    await _settle(tester);
+    await tester.enterText(
+        find.byType(TextField).first, 'priya@marinacafe.com');
+    await tester.tap(find.text('Sign in'));
+    await _settle(tester);
+    // Custom plan, so the rail is a plan — and it is empty.
+    await tester.tap(find.text('Schedule'));
+    await _settle(tester);
+    await tester.tap(find.text('Custom plan'));
+    await _settle(tester);
+    await tester.tap(find.text('Floor'));
+    await _settle(tester);
+
+    // Dimmed to the §6-A3 40%, not hidden: staff still need to see that
+    // letting Prism drive is a thing the room can do.
+    final dimmed = tester.widget<Opacity>(find
+        .descendant(of: find.byType(AutoButton), matching: find.byType(Opacity))
+        .first);
+    expect(dimmed.opacity, 0.4);
+    expect(tester.widget<AutoButton>(find.byType(AutoButton)).hasPlan, isFalse);
+
+    // The tap is answered rather than swallowed. Dimming alone says "not
+    // available" without ever saying why, and the reason is one step away.
+    await tester.tap(find.byType(AutoButton));
+    await _settle(tester);
+    expect(find.text('Nothing is planned for today'), findsOneWidget);
+    expect(find.text('Open Schedule'), findsOneWidget);
+
+    await tester.tap(find.text('Open Schedule'));
+    await _settle(tester);
+    // Landed where the fix is.
+    expect(find.text('Custom plan'), findsWidgets);
+  });
+
 }
 
 /// Bounded settle — Floor's EqBars loop never lets pumpAndSettle rest.
