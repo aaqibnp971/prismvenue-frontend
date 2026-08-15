@@ -31,6 +31,7 @@ import '../data/models/weather.dart';
 import '../data/repositories/playback_repo.dart';
 import '../data/repositories/settings_repo.dart';
 import '../data/repositories/weather_repo.dart';
+import 'audio_focus.dart';
 import 'prism_engine.dart';
 import 'weather_influence.dart';
 
@@ -105,6 +106,11 @@ class EngineController {
 
   bool _started = false;
 
+  // The four independent reasons the room may be silent. See _syncAudible.
+  bool _takeoverActive = false;
+  bool _paused = false;
+  bool _externalAudio = false;
+
   PrismEngine get _engine => _ref.read(prismEngineProvider);
 
   void _attach() {
@@ -147,6 +153,16 @@ class EngineController {
       _ref.listen<AsyncValue<Guardrails>>(
         guardrailsProvider,
         (_, next) => _onGuardrails(next),
+        fireImmediately: true,
+      ),
+    );
+    // Something else on this machine using the speakers. A state like the
+    // others, and followed the same way — see engine/audio_focus.dart for why
+    // Windows has to be told this rather than being asked.
+    _subscriptions.add(
+      _ref.listen<AsyncValue<bool>>(
+        externalAudioProvider,
+        (_, next) => _onExternalAudio(next.value ?? false),
         fireImmediately: true,
       ),
     );
@@ -246,46 +262,21 @@ class EngineController {
       await _engine.start();
     }
 
-    // How slowly the room eases between vibes is a venue setting (S05-3), so it is
-    // read here rather than baked into the engine. `read`, not `listen`: the value
-    // matters at the moment a mood changes, and a guardrails edit should not by
-    // itself retrigger a transition. The seed default covers the window before the
-    // first emission — the router relies on the same fallback.
-    // The raw value and the defaulted one are both needed, and they mean
-    // different things. The transition may safely fall back to the seed — a
-    // wrong crossfade length is cosmetic. The volume ceiling may not, so
-    // _applyCeiling gets the null and decides to hold instead.
-    final guardrailsValue = _ref.read(guardrailsProvider).value;
-    final guardrails = guardrailsValue ?? const Guardrails();
+    // How slowly the room eases between vibes is a venue setting (S05-3), so it
+    // is read here rather than baked into the engine. `read`, not `listen`: the
+    // value matters at the moment a mood changes, and a guardrails edit should
+    // not by itself retrigger a transition.
+    final guardrails =
+        _ref.read(guardrailsProvider).value ?? const Guardrails();
     await _engine.setMood(
       state.moodId,
       transition: guardrails.transitionDuration,
       alignToBar: guardrails.transitionAlignsToBar,
     );
 
-    // Pause is a silence with a different label. Takeover is handled separately
-    // and wins — see _onTakeover.
-    if (state.paused) {
-      await _engine.silence();
-      // Prism has stopped driving audio, so it can no longer vouch for any room
-      // being reachable. See app/local_playback.dart.
-      _ref.read(playedZonesProvider.notifier).clear();
-    } else if (!_takeoverActive) {
-      // Before the room is audible again, not after. On a zone change the
-      // guardrails and now-playing fetches race, and resuming first would let
-      // a room play a moment at the previous zone's ceiling.
-      await _applyCeiling(guardrailsValue);
-      await _engine.resume();
-      // Recorded only once the room is actually being driven — a mood set while
-      // paused or taken over proves nothing about reachability.
-      final zoneId = _ref.read(currentZoneIdProvider);
-      if (zoneId != null) {
-        _ref.read(playedZonesProvider.notifier).remember(zoneId);
-      }
-    }
+    _paused = state.paused;
+    await _syncAudible();
   }
-
-  bool _takeoverActive = false;
 
   Future<void> _onTakeover(TakeoverState? state) async {
     final active = state?.active ?? false;
@@ -294,21 +285,58 @@ class EngineController {
     // Tracked either way — the flag still has to be right for the next
     // sign-in — but a takeover ending while signed out must not un-silence.
     if (!_signedIn) return;
+    await _syncAudible();
+  }
 
-    if (active) {
-      // The whole point of takeover: the engine gets out of the way so staff
-      // can play their own audio through the same speakers.
+  /// Another program on this machine is using the speakers.
+  ///
+  /// Prism gets out of the way for the same reason it does during a takeover:
+  /// it is not the only thing that can own the room, and playing underneath a
+  /// video is worse than not playing at all. It comes back on its own when the
+  /// other sound stops — a venue is not somewhere anyone will remember to press
+  /// play again.
+  Future<void> _onExternalAudio(bool playing) async {
+    if (playing == _externalAudio) return;
+    _externalAudio = playing;
+    if (!_signedIn) return;
+    await _syncAudible();
+  }
+
+  /// Brings the engine into line with every reason the room might be silent.
+  ///
+  /// There are four, they are independent, and they arrive on four different
+  /// streams: nobody signed in, paused, staff have taken over, something else
+  /// is using the speakers. Each used to resume or silence directly, which
+  /// meant every new reason had to be repeated in every existing branch — and
+  /// the branches had already drifted (ending a takeover re-read `paused` from
+  /// a provider; nothing re-read anything else). One predicate, one place.
+  ///
+  /// Both engine calls are idempotent, so being called on a change that turns
+  /// out not to move the outcome costs nothing.
+  Future<void> _syncAudible() async {
+    if (!_audible) {
       await _engine.silence();
-      // Staff own the speakers now, so Prism is not the player and cannot
-      // vouch for any room. See app/local_playback.dart.
+      // Prism is not driving, so it can vouch for no room being reachable.
+      // See app/local_playback.dart.
       _ref.read(playedZonesProvider.notifier).clear();
-    } else {
-      // Only come back if the room is not also paused — otherwise ending a
-      // takeover would override a pause nobody cancelled.
-      final paused = _ref.read(nowPlayingProvider).value?.paused ?? false;
-      if (!paused) await _engine.resume();
+      return;
+    }
+
+    // Before the room is audible again, not after. On a zone change the
+    // guardrails and now-playing fetches race, and resuming first would let a
+    // room play a moment at the previous zone's ceiling.
+    await _applyCeiling(_ref.read(guardrailsProvider).value);
+    await _engine.resume();
+    // Recorded only once the room is actually being driven — a mood set while
+    // paused or taken over proves nothing about reachability.
+    final zoneId = _ref.read(currentZoneIdProvider);
+    if (zoneId != null) {
+      _ref.read(playedZonesProvider.notifier).remember(zoneId);
     }
   }
+
+  bool get _audible =>
+      _signedIn && !_paused && !_takeoverActive && !_externalAudio;
 
   void dispose() {
     for (final s in _subscriptions) {

@@ -6,6 +6,8 @@ import 'package:prism_venues/app/session.dart';
 import 'package:prism_venues/data/models/guardrails.dart';
 import 'package:prism_venues/data/repositories/playback_repo.dart';
 import 'package:prism_venues/data/repositories/settings_repo.dart';
+import 'package:flutter/services.dart';
+import 'package:prism_venues/engine/audio_focus.dart';
 import 'package:prism_venues/engine/engine_controller.dart';
 import 'package:prism_venues/engine/prism_engine.dart';
 import 'package:prism_venues/engine/weather_influence.dart';
@@ -45,7 +47,22 @@ void main() {
       container.listen(p, (_, _) {}, fireImmediately: true);
     }
     container.listen(guardrailsProvider, (_, _) {}, fireImmediately: true);
+    container.listen(externalAudioProvider, (_, _) {}, fireImmediately: true);
     return container;
+  }
+
+  /// What the Windows runner sends when another program starts or stops making
+  /// a sound. Delivered through the real channel so the handler wiring is
+  /// exercised, not just the controller's reaction to it.
+  Future<void> externalAudio(bool playing) async {
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+      audioFocusChannel.name,
+      const StandardMethodCodec().encodeMethodCall(
+        MethodCall('externalAudioChanged', playing),
+      ),
+      (_) {},
+    );
   }
 
   /// The controller chains its engine work through futures and the providers
@@ -118,6 +135,62 @@ void main() {
             'keep emitting for the null zone, and the old code took that as '
             'licence to reset to the 70% seed');
     expect(engine.volumes.last, 12);
+  });
+
+  test('the room gets out of the way when something else plays', () async {
+    // Windows has no audio focus — every process opens the shared mixer and
+    // they all sound at once — so a video started on the same machine used to
+    // play over the top of the room instead of replacing it.
+    final container = build();
+    await container.read(authControllerProvider).signIn('owner@x.com', 'pw');
+    await settle();
+    expect(engine.silenced, isFalse);
+
+    await externalAudio(true);
+    await settle();
+    expect(engine.silenced, isTrue);
+
+    // And comes back on its own. A venue is not somewhere anyone will remember
+    // to press play again.
+    await externalAudio(false);
+    await settle();
+    expect(engine.silenced, isFalse);
+  });
+
+  test('external audio ending does not override a pause', () async {
+    // The four reasons to be silent are independent, and each used to resume
+    // directly — so whichever cleared last un-silenced the room regardless of
+    // the others. This is the shape of that bug.
+    final container = build();
+    await container.read(authControllerProvider).signIn('owner@x.com', 'pw');
+    await settle();
+
+    await externalAudio(true);
+    await settle();
+    await container.read(playbackRepoProvider).pause(by: 'Priya');
+    await settle();
+    expect(engine.silenced, isTrue);
+
+    await externalAudio(false);
+    await settle();
+    expect(engine.silenced, isTrue,
+        reason: 'the room is still paused, and nobody cancelled that');
+
+    await container.read(playbackRepoProvider).resume();
+    await settle();
+    expect(engine.silenced, isFalse);
+  });
+
+  test('external audio while signed out changes nothing', () async {
+    final container = build();
+    await container.read(authControllerProvider).signIn('owner@x.com', 'pw');
+    await settle();
+    await container.read(authControllerProvider).signOut();
+    await settle();
+
+    await externalAudio(false);
+    await settle();
+    expect(engine.silenced, isTrue);
   });
 }
 

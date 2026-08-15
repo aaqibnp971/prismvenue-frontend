@@ -2,6 +2,7 @@
 
 #include <optional>
 
+#include "audio_focus.h"
 #include "flutter/generated_plugin_registrant.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -25,6 +26,13 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+
+  // Windows has no audio focus, so the app has to be told when another program
+  // starts using the speakers. See audio_focus.h.
+  audio_focus_ =
+      std::make_unique<AudioFocusWatcher>(flutter_controller_->engine());
+  audio_focus_->Start();
+
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -40,6 +48,13 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  // Before the engine goes: the watcher holds its messenger, and it posts from
+  // its own thread.
+  if (audio_focus_) {
+    audio_focus_->Stop();
+    audio_focus_ = nullptr;
+  }
+
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
