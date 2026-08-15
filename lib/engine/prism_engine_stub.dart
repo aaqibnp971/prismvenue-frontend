@@ -44,6 +44,9 @@ class PlatformPrismEngine implements PrismEngine {
   double? get outputLevel => null;
 
   @override
+  Future<void> setVolumePolicy(int maxPct) async {}
+
+  @override
   Future<void> silence() async {}
 
   @override

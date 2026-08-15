@@ -39,6 +39,7 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -220,6 +221,9 @@ class PlatformPrismEngine implements PrismEngine {
     try {
       next.loadScene(scenePath);
       next.start();
+      // Before the device opens, so a venue with a 10% band never hears one
+      // moment of full-volume audio while the first scene loads.
+      next.outputGain = _gainFor(_volumeMaxPct);
       _pin(next, mood);
     } catch (_) {
       next.dispose(); // never leak a half-built handle
@@ -277,6 +281,30 @@ class PlatformPrismEngine implements PrismEngine {
       return null;
     }
   }
+
+  /// The venue's volume ceiling, as an amplitude the engine can apply.
+  ///
+  /// Remembered even with no core yet, and re-applied by [_buildCore], so a
+  /// venue whose band is 10% never gets one moment of full-volume audio while
+  /// the first scene loads.
+  int _volumeMaxPct = 100;
+
+  @override
+  Future<void> setVolumePolicy(int maxPct) =>
+      _serialise('setVolumePolicy($maxPct)', () async {
+        final clamped = maxPct.clamp(0, 100);
+        if (clamped == _volumeMaxPct) return;
+        _volumeMaxPct = clamped;
+        _core?.outputGain = _gainFor(clamped);
+      });
+
+  /// Percentage → amplitude, on the same curve the engine uses for stems.
+  ///
+  /// `pgae`'s own `gain_to_amp` is `0.4 · x^1.5`, so the 1.5 exponent is this
+  /// codebase's existing answer to "what does a loudness number mean". Reusing
+  /// it keeps the band and the mix on one curve rather than inventing a second.
+  /// Linear would make 50% sound far louder than half.
+  static double _gainFor(int pct) => math.pow(pct / 100.0, 1.5).toDouble();
 
   @override
   Future<void> applyInfluence(PsvNudge nudge) =>

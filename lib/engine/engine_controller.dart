@@ -123,6 +123,16 @@ class EngineController {
         fireImmediately: true,
       ),
     );
+    // The venue's volume policy. Watched rather than read at mood-change time:
+    // a manager dragging the band expects the room to follow now, not at the
+    // next mood. See app/engine seam and S05-2.
+    _subscriptions.add(
+      _ref.listen<AsyncValue<Guardrails>>(
+        guardrailsProvider,
+        (_, next) => _onGuardrails(next.value),
+        fireImmediately: true,
+      ),
+    );
     // Weather is a state, like the other two, so it is followed the same way
     // rather than being fetched at the point of a mood change. That matters:
     // the sky moves while the mood stands still, and a room left on Peak all
@@ -138,6 +148,14 @@ class EngineController {
       ),
     );
   }
+
+  /// Applies S05-2's ceiling to the engine.
+  ///
+  /// The default is used until the stream produces one, exactly as the router
+  /// and the transition setting do — the seed default is full output, so a slow
+  /// first fetch cannot leave a room silent.
+  Future<void> _onGuardrails(Guardrails? guardrails) =>
+      _engine.setVolumePolicy((guardrails ?? const Guardrails()).volumeMax);
 
   /// Folds the venue's sky into the pinned PSV.
   ///

@@ -110,6 +110,23 @@ abstract class PrismEngine {
   /// track and a dash.
   double? get outputLevel;
 
+  /// Applies the venue's volume policy, 0–100.
+  ///
+  /// This is S05-2's band, which until now was a stored number nothing in the
+  /// audio path had ever read: `volume_min_pct` / `volume_max_pct` were touched
+  /// only by the settings sliders, the JSON mappers and the SQL that persists
+  /// them. Setting a band to 0–1% saved correctly and changed nothing.
+  ///
+  /// Takes the CEILING. The band describes a range that "Auto and staff stay
+  /// inside", but the app has no volume control to move within it, so the room
+  /// plays at the loudest the venue permits — which is also what makes
+  /// "Loudest it can go" a sentence the screen can keep. `volume_min_pct`
+  /// therefore has no effect today and is honest about that: it is a floor for
+  /// a control that does not exist yet.
+  ///
+  /// Ramped by the engine over ~0.25 s; nothing steps.
+  Future<void> setVolumePolicy(int maxPct);
+
   /// Stops rendering so someone else can own the speakers. This is what
   /// Takeover calls, and what Pause calls. Idempotent.
   Future<void> silence();
