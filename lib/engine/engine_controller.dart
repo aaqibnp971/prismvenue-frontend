@@ -26,6 +26,7 @@ import '../app/session.dart';
 import '../data/models/guardrails.dart';
 import '../data/models/playback_state.dart';
 import '../data/models/takeover_state.dart';
+import '../data/models/user.dart';
 import '../data/models/weather.dart';
 import '../data/repositories/playback_repo.dart';
 import '../data/repositories/settings_repo.dart';
@@ -123,13 +124,29 @@ class EngineController {
         fireImmediately: true,
       ),
     );
+    // Sign-out. The engine follows state, and "nobody is signed in" is a state
+    // in which Prism has no business driving a room.
+    //
+    // Nothing else here can notice it. Every other stream is zone-scoped, and
+    // signing out clears the zone, so they start THROWING `no_zone_selected`
+    // rather than emitting — `next.value` is null, `_onPlayback` returns early,
+    // and the last mood plays on over the sign-in screen until the process
+    // ends. On a shared venue iPad that is the next person's room, still
+    // running on the last person's session.
+    _subscriptions.add(
+      _ref.listen<User?>(
+        sessionProvider,
+        (_, next) => _onSession(next),
+        fireImmediately: true,
+      ),
+    );
     // The venue's volume policy. Watched rather than read at mood-change time:
     // a manager dragging the band expects the room to follow now, not at the
     // next mood. See app/engine seam and S05-2.
     _subscriptions.add(
       _ref.listen<AsyncValue<Guardrails>>(
         guardrailsProvider,
-        (_, next) => _onGuardrails(next.value),
+        (_, next) => _onGuardrails(next),
         fireImmediately: true,
       ),
     );
@@ -149,13 +166,59 @@ class EngineController {
     );
   }
 
+  /// The last ceiling actually pushed to the engine; null before the first.
+  int? _appliedVolumeMax;
+
   /// Applies S05-2's ceiling to the engine.
   ///
-  /// The default is used until the stream produces one, exactly as the router
-  /// and the transition setting do — the seed default is full output, so a slow
-  /// first fetch cannot leave a room silent.
-  Future<void> _onGuardrails(Guardrails? guardrails) =>
-      _engine.setVolumePolicy((guardrails ?? const Guardrails()).volumeMax);
+  /// The seed default covers the window before the first value arrives — the
+  /// router and the transition setting use the same fallback, and the seed is
+  /// full output, so a slow first fetch cannot leave a room silent.
+  ///
+  /// After that the last applied ceiling is **held** rather than re-defaulted.
+  /// An empty `AsyncValue` means loading or error, not "no policy", and reading
+  /// it as one pushed the room to 70% every time the stream hiccuped — loudest
+  /// exactly where a manager had deliberately set a low ceiling. Signing out
+  /// made `guardrailsProvider` throw `no_zone_selected`, so it happened on
+  /// every sign-out. A volume guardrail must not fail upward.
+  Future<void> _onGuardrails(AsyncValue<Guardrails> next) =>
+      _applyCeiling(next.value);
+
+  Future<void> _applyCeiling(Guardrails? guardrails) async {
+    if (!_signedIn) return;
+    if (guardrails == null && _appliedVolumeMax != null) return;
+    final ceiling = (guardrails ?? const Guardrails()).volumeMax;
+    if (ceiling == _appliedVolumeMax) return;
+    _appliedVolumeMax = ceiling;
+    await _engine.setVolumePolicy(ceiling);
+  }
+
+  bool _signedIn = false;
+
+  /// Starts and stops the room with the session.
+  ///
+  /// Signing in replays the current playback state rather than waiting for the
+  /// next emission. The order in `AuthController._apply` is context first, user
+  /// last, so a zone-scoped stream can well have emitted while [_signedIn] was
+  /// still false — and that emission was ignored on purpose. Without the replay
+  /// the room would stay silent until something else happened to change.
+  Future<void> _onSession(User? user) async {
+    final signedIn = user != null;
+    if (signedIn == _signedIn) return;
+    _signedIn = signedIn;
+    if (signedIn) {
+      await _onPlayback(_ref.read(nowPlayingProvider).value);
+      return;
+    }
+
+    await _engine.silence();
+    // Prism has stopped driving, so it can vouch for no room being reachable.
+    _ref.read(playedZonesProvider.notifier).clear();
+    // The ceiling is deliberately NOT cleared. The engine is silent, so it
+    // changes nothing now, and holding the last real number is a better guess
+    // for the gap before the next account's guardrails land than resetting to
+    // full output would be. _onPlayback applies the real one before it resumes.
+  }
 
   /// Folds the venue's sky into the pinned PSV.
   ///
@@ -168,6 +231,12 @@ class EngineController {
 
   Future<void> _onPlayback(PlaybackState? state) async {
     if (state == null) return;
+    // Nobody is signed in, so nothing may reach the speakers — whatever a
+    // stream says. The guard belongs here rather than only on the sign-out
+    // path because these streams do not reliably stop: they are zone-scoped
+    // and the API ones start throwing, but a late or cached emission arriving
+    // after sign-out would otherwise resume the room over the sign-in screen.
+    if (!_signedIn) return;
 
     // Start lazily rather than at app launch: extracting stems and opening an
     // audio device is wasted work for a manager who only came in to edit the
@@ -182,7 +251,12 @@ class EngineController {
     // matters at the moment a mood changes, and a guardrails edit should not by
     // itself retrigger a transition. The seed default covers the window before the
     // first emission — the router relies on the same fallback.
-    final guardrails = _ref.read(guardrailsProvider).value ?? const Guardrails();
+    // The raw value and the defaulted one are both needed, and they mean
+    // different things. The transition may safely fall back to the seed — a
+    // wrong crossfade length is cosmetic. The volume ceiling may not, so
+    // _applyCeiling gets the null and decides to hold instead.
+    final guardrailsValue = _ref.read(guardrailsProvider).value;
+    final guardrails = guardrailsValue ?? const Guardrails();
     await _engine.setMood(
       state.moodId,
       transition: guardrails.transitionDuration,
@@ -197,6 +271,10 @@ class EngineController {
       // being reachable. See app/local_playback.dart.
       _ref.read(playedZonesProvider.notifier).clear();
     } else if (!_takeoverActive) {
+      // Before the room is audible again, not after. On a zone change the
+      // guardrails and now-playing fetches race, and resuming first would let
+      // a room play a moment at the previous zone's ceiling.
+      await _applyCeiling(guardrailsValue);
       await _engine.resume();
       // Recorded only once the room is actually being driven — a mood set while
       // paused or taken over proves nothing about reachability.
@@ -213,6 +291,9 @@ class EngineController {
     final active = state?.active ?? false;
     if (active == _takeoverActive) return;
     _takeoverActive = active;
+    // Tracked either way — the flag still has to be right for the next
+    // sign-in — but a takeover ending while signed out must not un-silence.
+    if (!_signedIn) return;
 
     if (active) {
       // The whole point of takeover: the engine gets out of the way so staff

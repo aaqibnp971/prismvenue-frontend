@@ -226,38 +226,54 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
               ),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: PrismType.label.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: palette.textSecondary)),
-                const SizedBox(height: 2),
-                Row(
+            // The two lines want ~32px and the block is `rowHeight - 24`, so a
+            // short enough window makes them not fit — seven rows over a
+            // shrinking grid is a height every window resize walks through.
+            // Both lines are already single-line and ellipsised, so the
+            // overflow is vertical and no amount of truncation fixes it: the
+            // second line has to go. The range label stays, because it is the
+            // one a manager is reading when they look at a grid, and the mood
+            // is still carried by the block's colour and its Semantics label.
+            child: LayoutBuilder(
+              builder: (context, box) {
+                final showMood = box.maxHeight >= 32;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: mood.dot(palette.brightness),
-                        shape: BoxShape.circle,
+                    Text(label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: PrismType.label.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: palette.textSecondary)),
+                    if (showMood) ...[
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: mood.dot(palette.brightness),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(mood.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: PrismType.bodySm.copyWith(
+                                    fontSize: 12,
+                                    color: palette.textPrimary)),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 5),
-                    Flexible(
-                      child: Text(mood.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: PrismType.bodySm.copyWith(
-                              fontSize: 12, color: palette.textPrimary)),
-                    ),
+                    ],
                   ],
-                ),
-              ],
+                );
+              },
             ),
           ),
         ),
