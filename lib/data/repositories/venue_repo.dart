@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../mock/mock_venue_repo.dart';
+import '../models/timezone.dart';
 import '../models/venue.dart';
 
 /// Venue/estate boundary — §2 S04. Async/stream-shaped for the future
@@ -15,11 +16,24 @@ abstract class VenueRepo {
   Future<void> returnZoneToAuto(String venueId, String zoneId);
 
   /// S04-3 "Add venue" — zones from the S04-4 sheet, by name.
+  ///
+  /// [deviceOffsets] is how the new venue gets a clock. Nothing in the app or
+  /// the API carries a default zone to fall back on, so without it the column
+  /// default stands — which is how every venue ended up on one arbitrary zone,
+  /// and why a schedule typed in India fired on Gulf time.
   Future<void> addVenue({
     required String name,
     required String address,
     required List<String> zoneNames,
+    DeviceOffsets? deviceOffsets,
   });
+
+  /// Every zone the server knows, for the picker. Fetched rather than bundled:
+  /// the tz database changes, and a list compiled into the app goes stale.
+  Future<List<TimezoneOption>> listTimezones();
+
+  /// S05 "Time zone" — which clock this venue's schedule runs on.
+  Future<void> setTimezone(String venueId, String timezone);
 
   /// Add a zone to an existing venue — the other half of [removeZone].
   ///

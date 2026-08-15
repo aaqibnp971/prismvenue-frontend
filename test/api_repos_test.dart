@@ -10,6 +10,7 @@ import 'package:prism_venues/data/api/api_scope.dart';
 import 'package:prism_venues/data/api/api_venue_repo.dart';
 import 'package:prism_venues/data/api/token_store.dart';
 import 'package:prism_venues/data/models/schedule_entry.dart';
+import 'package:prism_venues/data/models/timezone.dart';
 import 'package:prism_venues/data/models/zone.dart';
 
 /// VenueRepo, ScheduleRepo and PlaybackRepo mapping against a fake transport.
@@ -108,6 +109,84 @@ void main() {
       user = 'u-owner-b';
       routes['/venues/v-1'] = venue('v-1', "B's venue", const []);
       expect((await repo.watchVenue('v-1').first)?.name, "B's venue");
+    });
+
+    test('sends the device clock when adding a venue', () async {
+      // `venues.timezone` is the only thing that decides which daypart is
+      // current, and nothing was ever setting it — so every venue took the
+      // column default and every schedule fired on somebody else's clock. Two
+      // offsets, not one: a single reading cannot separate a DST zone from a
+      // fixed one at the same current offset.
+      routes['/venues'] = <Object>[];
+      final repo = ApiVenueRepo(buildClient(), scope());
+
+      await repo.addVenue(
+        name: 'Harbor House',
+        address: '3 Quayside Lane',
+        zoneNames: const ['Dining room'],
+        deviceOffsets:
+            const DeviceOffsets(januaryMinutes: 330, julyMinutes: 330),
+      );
+
+      final body = jsonDecode(
+        sent.firstWhere((r) => r.method == 'POST').body,
+      ) as Map<String, dynamic>;
+      expect(body['device_offsets'],
+          {'january_minutes': 330, 'july_minutes': 330});
+    });
+
+    test('omits the clock entirely when there is no reading', () async {
+      // Absent, not null: the server branches on "no reading, leave the column
+      // default", and a null would have to be special-cased there instead.
+      routes['/venues'] = <Object>[];
+      await ApiVenueRepo(buildClient(), scope())
+          .addVenue(name: 'X', address: '', zoneNames: const []);
+
+      final body = jsonDecode(
+        sent.firstWhere((r) => r.method == 'POST').body,
+      ) as Map<String, dynamic>;
+      expect(body.containsKey('device_offsets'), isFalse);
+    });
+
+    test('reads back the venue clock, and does not invent one', () async {
+      routes['/venues'] = [
+        {
+          'id': 'v1',
+          'name': 'Harbor House',
+          'address': null,
+          'hours_label': 'Every day · 7am–11pm',
+          'timezone': 'Asia/Kolkata',
+          'local_time': '22:28',
+          'zones': <Object>[],
+        },
+        {
+          'id': 'v2',
+          'name': 'Older server',
+          'address': null,
+          'hours_label': 'Every day · 7am–11pm',
+          'zones': <Object>[],
+        },
+      ];
+
+      final venues =
+          await ApiVenueRepo(buildClient(), scope()).watchVenues().first;
+      final byName = {for (final v in venues) v.name: v};
+
+      expect(byName['Harbor House']!.timezone, 'Asia/Kolkata');
+      expect(byName['Harbor House']!.localTime, '22:28');
+      // A server that does not send it leaves null — rendering a confident
+      // zone nobody sent is how this stayed invisible.
+      expect(byName['Older server']!.timezone, isNull);
+    });
+
+    test('setTimezone patches the venue', () async {
+      routes['/venues'] = <Object>[];
+      await ApiVenueRepo(buildClient(), scope())
+          .setTimezone('v-1', 'Asia/Kolkata');
+
+      final patch = sent.firstWhere((r) => r.method == 'PATCH');
+      expect(patch.url.path, endsWith('/venues/v-1'));
+      expect(jsonDecode(patch.body), {'timezone': 'Asia/Kolkata'});
     });
 
     test('maps every zone status', () async {

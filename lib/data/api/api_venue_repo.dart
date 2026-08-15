@@ -1,3 +1,4 @@
+import '../models/timezone.dart';
 import '../models/venue.dart';
 import '../models/zone.dart';
 import '../repositories/venue_repo.dart';
@@ -69,12 +70,36 @@ class ApiVenueRepo implements VenueRepo {
     required String name,
     required String address,
     required List<String> zoneNames,
+    DeviceOffsets? deviceOffsets,
   }) async {
     await _client.post('/venues', body: {
       'name': name,
       'address': address,
       'zone_names': zoneNames,
+      // Omitted rather than null-filled when absent, so the server's "no
+      // reading, leave the column default" branch is the one that runs.
+      if (deviceOffsets != null) 'device_offsets': deviceOffsets.toJson(),
     });
+    await _refreshAll();
+  }
+
+  @override
+  Future<List<TimezoneOption>> listTimezones() async {
+    final json = await _client.get('/timezones') as Map<String, dynamic>;
+    return [
+      for (final t in (json['timezones'] as List? ?? const []))
+        TimezoneOption(
+          name: (t as Map<String, dynamic>)['name'] as String,
+          utcOffsetMinutes: t['utc_offset_minutes'] as int? ?? 0,
+        ),
+    ];
+  }
+
+  @override
+  Future<void> setTimezone(String venueId, String timezone) async {
+    await _client.patch('/venues/$venueId', body: {'timezone': timezone});
+    // Every daypart's "is it now" answer moves with this, so the schedule
+    // streams are as stale as the venue rows are.
     await _refreshAll();
   }
 
@@ -146,6 +171,10 @@ class ApiVenueRepo implements VenueRepo {
         name: json['name'] as String,
         address: json['address'] as String?,
         hoursLabel: json['hours_label'] as String? ?? 'Every day · 7am–11pm',
+        // Null rather than a stand-in when absent. Rendering a confident zone
+        // the server did not send is exactly how this went unnoticed.
+        timezone: json['timezone'] as String?,
+        localTime: json['local_time'] as String?,
         zones: [
           for (final raw in (json['zones'] as List? ?? const []))
             _zoneFrom((raw as Map).cast<String, dynamic>()),

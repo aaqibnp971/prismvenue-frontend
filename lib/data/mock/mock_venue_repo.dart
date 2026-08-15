@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../api/api_exception.dart';
+import '../models/timezone.dart';
 import '../models/venue.dart';
 import '../models/zone.dart';
 import '../repositories/venue_repo.dart';
@@ -111,12 +112,17 @@ class MockVenueRepo implements VenueRepo {
     required String name,
     required String address,
     required List<String> zoneNames,
+    DeviceOffsets? deviceOffsets,
   }) async {
     final id = 'venue-${_nextId++}';
     _venues.add(Venue(
       id: id,
       name: name,
       address: address,
+      // Whatever this device is on. The real server resolves the same reading
+      // against the tz database; the mock cannot, so it shows the offset it
+      // was handed rather than inventing a place name.
+      timezone: deviceOffsets == null ? null : 'Device offset',
       zones: [
         for (final (i, zoneName) in zoneNames.indexed)
           Zone(
@@ -194,6 +200,37 @@ class MockVenueRepo implements VenueRepo {
       if (_venues[i].zones.any((z) => z.id == zoneId)) {
         _venues[i] = _venues[i].copyWith(
             zones: _venues[i].zones.where((z) => z.id != zoneId).toList());
+      }
+    }
+    _emit();
+  }
+
+  /// A handful of real zones spanning the interesting cases — a half-hour
+  /// offset, a DST one, and the seeded venues' own. Enough to drive the picker
+  /// on mocks; the API repo serves the whole tz database.
+  @override
+  Future<List<TimezoneOption>> listTimezones() async => const [
+        TimezoneOption(name: 'America/New_York', utcOffsetMinutes: -240),
+        TimezoneOption(name: 'Asia/Dubai', utcOffsetMinutes: 240),
+        TimezoneOption(name: 'Asia/Kolkata', utcOffsetMinutes: 330),
+        TimezoneOption(name: 'Australia/Sydney', utcOffsetMinutes: 600),
+        TimezoneOption(name: 'Europe/London', utcOffsetMinutes: 60),
+      ];
+
+  @override
+  Future<void> setTimezone(String venueId, String timezone) async {
+    for (var i = 0; i < _venues.length; i++) {
+      if (_venues[i].id == venueId) {
+        final v = _venues[i];
+        _venues[i] = Venue(
+          id: v.id,
+          name: v.name,
+          zones: v.zones,
+          address: v.address,
+          hoursLabel: v.hoursLabel,
+          timezone: timezone,
+          localTime: v.localTime,
+        );
       }
     }
     _emit();

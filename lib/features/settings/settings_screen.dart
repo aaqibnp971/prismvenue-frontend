@@ -7,6 +7,8 @@ import '../../app/roles.dart';
 import '../../app/session.dart';
 import '../../app/venue_header.dart';
 import '../../data/models/guardrails.dart';
+import '../../data/models/timezone.dart';
+import '../../data/models/venue.dart';
 import '../../data/repositories/settings_repo.dart';
 import '../../data/repositories/venue_repo.dart';
 import '../../app/theme_mode.dart';
@@ -16,6 +18,7 @@ import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/settings_row.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
+import 'timezone_sheet.dart';
 
 /// S05-1 "Settings — Sound & Access guardrails (scrolls for more)".
 /// Title "Settings" 22 serif + "Marina Café · you're a manager" sub; grouped
@@ -132,6 +135,24 @@ class SettingsScreen extends ConsumerWidget {
                             : '${venue.zones.length} · ${hours.rangeLabel}',
                         onTap: () => context.go('/settings/hours'),
                       ),
+                      SettingsRow(
+                        title: 'Time zone',
+                        // The venue's own wall clock beside the zone name, and
+                        // it is the reason this row exists. `venues.timezone`
+                        // decides which daypart is current — nothing else does
+                        // — and it was invisible and unset, so a plan typed at
+                        // 10pm here ran on some other country's 10pm with no
+                        // way to notice. Seeing "Asia/Dubai · 20:58" while your
+                        // own clock reads 22:28 answers it instantly.
+                        value: venue?.timezone == null
+                            ? '—'
+                            : venue!.localTime == null
+                                ? venue.timezone!
+                                : '${venue.timezone} · ${venue.localTime}',
+                        onTap: venueId == null
+                            ? null
+                            : () => _pickTimezone(context, ref, venueId, venue),
+                      ),
                     ],
                   ),
                   _Group(
@@ -231,6 +252,43 @@ class _Group extends StatelessWidget {
         const SizedBox(height: 8),
       ],
     );
+  }
+}
+
+/// Loads the zone list, opens the picker, and writes the choice.
+///
+/// The list is fetched on tap rather than held in a provider: it is ~600 rows
+/// that change once a year and are needed on one screen, so keeping it warm
+/// would cost more than fetching it. A failed fetch reports and opens nothing,
+/// because a picker with an empty list looks like a venue with no zones to
+/// choose from.
+Future<void> _pickTimezone(
+  BuildContext context,
+  WidgetRef ref,
+  String venueId,
+  Venue? venue,
+) async {
+  final repo = ref.read(venueRepoProvider);
+  List<TimezoneOption> options;
+  try {
+    options = await repo.listTimezones();
+  } catch (e) {
+    if (context.mounted) showPrismError(context, e);
+    return;
+  }
+  if (!context.mounted) return;
+
+  final picked = await showTimezoneSheet(
+    context,
+    options: options,
+    selected: venue?.timezone,
+  );
+  if (picked == null || picked == venue?.timezone) return;
+
+  try {
+    await repo.setTimezone(venueId, picked);
+  } catch (e) {
+    if (context.mounted) showPrismError(context, e);
   }
 }
 

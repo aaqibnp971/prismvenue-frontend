@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/session.dart';
+import '../../data/models/timezone.dart';
 import '../../data/repositories/venue_repo.dart';
 import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/primary_button.dart';
@@ -72,6 +73,14 @@ class _AddVenueScreenState extends ConsumerState<AddVenueScreen> {
                 .where((s) => s.isNotEmpty)
                 .join(', '),
             zoneNames: _zones,
+            // This machine's own clock, which is the closest thing to a right
+            // answer available at creation time — a venue is usually set up
+            // from somewhere near it. Without it the column default stands,
+            // which is how every existing venue ended up on one arbitrary zone
+            // and every schedule fired at the wrong hour. Correctable
+            // afterwards in Settings; the point is that it starts sane rather
+            // than starting wrong and silent.
+            deviceOffsets: DeviceOffsets.fromDevice(),
           );
     } catch (e) {
       if (mounted) {
