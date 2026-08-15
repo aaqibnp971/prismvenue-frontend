@@ -32,7 +32,7 @@ class PortfolioScreen extends ConsumerWidget {
     // Corrected BEFORE sorting: a room this app is audibly playing must not be
     // hoisted to the top of "Needs attention" as offline. See
     // app/local_playback.dart.
-    final local = ref.watch(locallyPlayingZoneProvider);
+    final local = ref.watch(localPlaybackProvider);
     final venues = needsAttentionFirst([
       for (final v in ref.watch(venuesProvider).value ?? const <Venue>[])
         withLocalPlayback(v, local),

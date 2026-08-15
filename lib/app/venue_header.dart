@@ -51,7 +51,7 @@ final venueHeaderProvider = Provider.autoDispose<VenueHeader>((ref) {
   // playing cannot honestly be labelled offline in the very chrome above the
   // hero card that is showing its mood. See app/local_playback.dart.
   final online =
-      statusOf(zone, ref.watch(locallyPlayingZoneProvider)) != ZoneStatus.offline;
+      statusOf(zone, ref.watch(localPlaybackProvider)) != ZoneStatus.offline;
   return (
     title: context.venueName,
     subtitle: '$zoneName · ${online ? 'online' : 'offline'}',

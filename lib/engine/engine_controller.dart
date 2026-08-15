@@ -21,6 +21,8 @@ import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../app/local_playback.dart';
+import '../app/session.dart';
 import '../data/models/guardrails.dart';
 import '../data/models/playback_state.dart';
 import '../data/models/takeover_state.dart';
@@ -173,8 +175,17 @@ class EngineController {
     // and wins — see _onTakeover.
     if (state.paused) {
       await _engine.silence();
+      // Prism has stopped driving audio, so it can no longer vouch for any room
+      // being reachable. See app/local_playback.dart.
+      _ref.read(playedZonesProvider.notifier).clear();
     } else if (!_takeoverActive) {
       await _engine.resume();
+      // Recorded only once the room is actually being driven — a mood set while
+      // paused or taken over proves nothing about reachability.
+      final zoneId = _ref.read(currentZoneIdProvider);
+      if (zoneId != null) {
+        _ref.read(playedZonesProvider.notifier).remember(zoneId);
+      }
     }
   }
 
@@ -189,6 +200,9 @@ class EngineController {
       // The whole point of takeover: the engine gets out of the way so staff
       // can play their own audio through the same speakers.
       await _engine.silence();
+      // Staff own the speakers now, so Prism is not the player and cannot
+      // vouch for any room. See app/local_playback.dart.
+      _ref.read(playedZonesProvider.notifier).clear();
     } else {
       // Only come back if the room is not also paused — otherwise ending a
       // takeover would override a pause nobody cancelled.

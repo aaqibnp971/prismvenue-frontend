@@ -44,7 +44,7 @@ class VenueScreen extends ConsumerWidget {
     final loaded = ref.watch(venueProvider(venueId)).value;
     final venue = loaded == null
         ? null
-        : withLocalPlayback(loaded, ref.watch(locallyPlayingZoneProvider));
+        : withLocalPlayback(loaded, ref.watch(localPlaybackProvider));
 
     // §2.0 status line, bound to the routed venue. "online" is connectivity:
     // an off-schedule zone is still online; an offline zone flips the line
