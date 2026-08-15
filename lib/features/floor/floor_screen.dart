@@ -98,6 +98,7 @@ class FloorScreen extends ConsumerWidget {
                         // hardcoded 62%.
                         noise: ref.watch(engineOutputLevelProvider).value,
                         noiseLabel: 'Output',
+                        takeoverActive: takeover.value?.active == true,
                         onTogglePause: () async {
                           final repo = ref.read(playbackRepoProvider);
                           try {
@@ -134,13 +135,26 @@ class FloorScreen extends ConsumerWidget {
                                 }
                               },
                         onTakeOver: () => context.go('/takeover'),
+                        // "Take over" would be offering to seize a room staff
+                        // already hold. Same destination, honest label.
+                        takeOverLabel: takeover.value?.active == true
+                            ? 'Hand back'
+                            : 'Take over',
                       ),
                       const SizedBox(height: 20),
                       MoodGrid(
                         currentMoodId: state.moodId,
                         paused: state.paused,
-                        onMoodTap: (mood) =>
-                            _onMoodTap(context, ref, mood, state.moodId),
+                        // Inert while staff hold the room. Prism is producing
+                        // no sound, so a tap changes a value nobody can hear
+                        // and is then discarded anyway — ending a takeover
+                        // returns the zone to auto, not to whatever was
+                        // tapped. An inert grid under a pill that explains why
+                        // beats a live one that does nothing.
+                        onMoodTap: takeover.value?.active == true
+                            ? null
+                            : (mood) =>
+                                _onMoodTap(context, ref, mood, state.moodId),
                       ),
                     ],
                   ),

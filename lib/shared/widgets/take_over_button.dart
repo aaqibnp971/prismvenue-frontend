@@ -9,9 +9,18 @@ import 'pressable.dart';
 /// `borderStrong`, "Take over" 14/700 + headphones icon 17, gap 9.
 /// Pressed = 92% scale (§6-A2).
 class TakeOverButton extends StatelessWidget {
-  const TakeOverButton({super.key, this.onTap});
+  const TakeOverButton({super.key, this.onTap, this.label = 'Take over'});
 
   final VoidCallback? onTap;
+
+  /// "Take over" normally; "Hand back" once a takeover is already running.
+  ///
+  /// The destination was always right — it routes to S02, which shows the
+  /// ACTIVE screen when one is in flight — but the label was not. A button
+  /// offering to take over a room that staff already hold reads as a control
+  /// that has not noticed, which is exactly how the Floor screen managed to
+  /// look broken during a perfectly normal takeover.
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +42,7 @@ class TakeOverButton extends StatelessWidget {
           children: [
             Icon(LucideIcons.headphones, size: 17, color: palette.textPrimary),
             const SizedBox(width: 9),
-            Text('Take over',
+            Text(label,
                 style: PrismType.button.copyWith(color: palette.textPrimary)),
           ],
         ),

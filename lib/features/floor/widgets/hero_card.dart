@@ -21,6 +21,8 @@ class HeroCard extends StatelessWidget {
     required this.state,
     required this.noise,
     this.noiseLabel = 'Noise',
+    this.takeoverActive = false,
+    this.takeOverLabel = 'Take over',
     this.onTogglePause,
     this.onTakeOver,
     this.onReturnToAuto,
@@ -50,6 +52,18 @@ class HeroCard extends StatelessWidget {
   /// feeds the engine's own level; the default keeps the designed "Noise"
   /// reading for anything showing real room telemetry.
   final String noiseLabel;
+
+  /// Staff are driving the speakers, so Prism is producing no sound at all.
+  ///
+  /// The Floor screen used to signal this only by hiding "Return to Auto",
+  /// which reads as a missing button rather than as a state. Everything else
+  /// on the card carried on as normal — a mood name, a "Playing" badge, an
+  /// off-schedule pill — over a room Prism had handed off. This makes the
+  /// state legible where the user is actually looking.
+  final bool takeoverActive;
+
+  /// Label for the S02 button — see [TakeOverButton.label].
+  final String takeOverLabel;
   final VoidCallback? onTogglePause;
   final VoidCallback? onTakeOver;
 
@@ -66,7 +80,18 @@ class HeroCard extends StatelessWidget {
 
     // S01-1 pill: "Prism is driving" (accentSoft). S01-2 swaps it for an
     // amber-tinted "Paused by **Priya** · tap play to resume".
-    final pill = state.paused
+    //
+    // Takeover outranks both, because it is the only one of the three where
+    // Prism is not producing sound at all. Until this existed the Floor screen
+    // said nothing about a takeover — the sole tell was the Auto button
+    // quietly disappearing, so a room handed off half an hour ago read as
+    // "Off schedule · you chose this vibe" beside a silent output meter, and
+    // the honest conclusion was that the app was broken.
+    final pill = takeoverActive
+        ? const StatusPill(
+            text: 'Staff have the room · Prism is handed off',
+            tone: PillTone.amber)
+        : state.paused
         ? StatusPill(
             text: 'Paused by ${state.pausedBy} · tap play to resume',
             tone: PillTone.amber,
@@ -106,7 +131,7 @@ class HeroCard extends StatelessWidget {
           fit(AutoButton(active: !state.offSchedule, onTap: onReturnToAuto)),
           const SizedBox(width: 10),
         ],
-        fit(TakeOverButton(onTap: onTakeOver)),
+        fit(TakeOverButton(onTap: onTakeOver, label: takeOverLabel)),
       ];
     }
 

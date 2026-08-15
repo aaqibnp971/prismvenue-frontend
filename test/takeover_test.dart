@@ -222,6 +222,37 @@ void main() {
     await container.read(playbackRepoProvider).endTakeover();
     await _settle(tester);
   });
+
+  testWidgets('Floor says a takeover is holding the room', (tester) async {
+    // Reported as "nothing works there and there is not even an auto button".
+    // It was a perfectly normal takeover: Prism hands the speakers off, so the
+    // engine goes silent and S02 owns the hand-back. But the ONLY tell on the
+    // Floor screen was the Auto button quietly disappearing, so the card sat
+    // there showing a mood name and a "Playing" badge over a silent room.
+    final container = await pumpTakeover(tester);
+    await tester.tap(find.text('Start takeover'));
+    await _settle(tester);
+
+    await tester.tap(find.text('Floor'));
+    await _settle(tester);
+
+    // Says so, in the place the user is already looking.
+    expect(find.text('Staff have the room · Prism is handed off'),
+        findsOneWidget);
+    // And the S02 button no longer offers to seize a room staff already hold.
+    expect(find.text('Hand back'), findsOneWidget);
+    expect(find.text('Take over'), findsNothing);
+    // Auto stays hidden — S02 owns the hand-back, and two controls for the
+    // same thing is a bug.
+    expect(find.text('Auto'), findsNothing);
+
+    await container.read(playbackRepoProvider).endTakeover();
+    await _settle(tester);
+
+    // Back to normal once the room is handed back.
+    expect(find.text('Take over'), findsOneWidget);
+    expect(find.text('Staff have the room · Prism is handed off'), findsNothing);
+  });
 }
 
 /// Bounded settle — chrome may host looping animations.
