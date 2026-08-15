@@ -69,20 +69,84 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
     expect(find.textContaining('59:5'), findsOneWidget);
 
-    // Extend (S02-4 "More time") with its live "New return" preview.
-    await tester.tap(find.text('Running long? Extend'));
+    // The S02-4 sheet with its live "New return" preview. Retitled from "More
+    // time" now that it moves the deadline both ways.
+    await tester.tap(find.text('Running long or done early? Adjust'));
     await _settle(tester);
-    expect(find.text('More time'), findsOneWidget);
+    expect(find.text('Return time'), findsOneWidget);
     expect(find.text('New return'), findsOneWidget);
     await tester.tap(find.text('+15 min'));
     await _settle(tester);
-    await tester.tap(find.text('Push it back'));
+    await tester.tap(find.text('Update return'));
     await _settle(tester);
     // ~59:4x remaining + 15:00 ≈ 74 min → h:mm.
     expect(find.textContaining('1:14'), findsOneWidget);
 
     // End the takeover so its 1s ticker isn't pending when the test-body
     // timer invariant runs (teardown disposal happens after that check).
+    await container.read(playbackRepoProvider).endTakeover();
+    await _settle(tester);
+  });
+
+  testWidgets('the return time can be brought back sooner, not just pushed out',
+      (tester) async {
+    // Beyond the frames: S02-4 only ever answered "running long", but a set
+    // that finishes early is just as ordinary. Without this the only way to
+    // shorten a takeover was to end it outright, which hands the room back now
+    // rather than in ten minutes.
+    final container = await pumpTakeover(tester);
+    // An hour, so a 30-minute reduction lands well clear of the floor.
+    await tester.tap(find.text('1 hour'));
+    await _settle(tester);
+    await tester.tap(find.text('Start takeover'));
+    await _settle(tester);
+
+    await tester.tap(find.text('Running long or done early? Adjust'));
+    await _settle(tester);
+
+    await tester.tap(find.text('-30 min'));
+    await _settle(tester);
+    await tester.tap(find.text('Update return'));
+    await _settle(tester);
+
+    // 60:00 - 30:00 = 30 min left, so the countdown drops out of h:mm.
+    expect(find.textContaining('29:5'), findsOneWidget);
+
+    await container.read(playbackRepoProvider).endTakeover();
+    await _settle(tester);
+  });
+
+  testWidgets('reducing floors a minute out rather than ending the takeover',
+      (tester) async {
+    // Ending is "Return to Prism now" — explicit, and not something a "-30"
+    // should trigger by accident. The server floors the new deadline the same
+    // way, and the mock clamps identically so the sheet's preview is rehearsed
+    // against behaviour the backend actually has.
+    final container = await pumpTakeover(tester);
+    await tester.tap(find.text('1 hour'));
+    await _settle(tester);
+    await tester.tap(find.text('Start takeover'));
+    await _settle(tester);
+
+    final repo = container.read(playbackRepoProvider);
+    // Down to 10 minutes, then ask for 30 more off than exist.
+    await repo.extendTakeover(const Duration(minutes: -50));
+    await _settle(tester);
+    await repo.extendTakeover(const Duration(minutes: -30));
+    await _settle(tester);
+
+    // Clamped to a minute, and crucially still ACTIVE — the hand-back screen is
+    // still up rather than having bounced back to Floor.
+    //
+    // Asserted on state, not on the rendered digits: the countdown ticks once a
+    // second and `_settle` advances the fake clock past the boundary, so "1:00"
+    // is already "0:59" by the time the frame lands.
+    expect(find.text('Return to Prism now'), findsOneWidget);
+    final state = container.read(takeoverStateProvider).value!;
+    expect(state.active, isTrue);
+    expect(state.remaining, lessThanOrEqualTo(const Duration(minutes: 1)));
+    expect(state.remaining, greaterThan(Duration.zero));
+
     await container.read(playbackRepoProvider).endTakeover();
     await _settle(tester);
   });
@@ -133,10 +197,13 @@ void main() {
   testWidgets('S02-4 remove auto-return: countdown becomes elapsed, '
       'Extend disappears, end still works', (tester) async {
     final container = await pumpTakeover(tester);
+    // An hour, so a 30-minute reduction lands well clear of the floor.
+    await tester.tap(find.text('1 hour'));
+    await _settle(tester);
     await tester.tap(find.text('Start takeover'));
     await _settle(tester);
 
-    await tester.tap(find.text('Running long? Extend'));
+    await tester.tap(find.text('Running long or done early? Adjust'));
     await _settle(tester);
     await tester.tap(find.text('Remove auto-return instead'));
     await _settle(tester);
@@ -144,7 +211,7 @@ void main() {
     // No deadline: the countdown block flips to elapsed time and there is
     // nothing left to extend.
     expect(find.text('Auto-return is off'), findsOneWidget);
-    expect(find.text('Running long? Extend'), findsNothing);
+    expect(find.text('Running long or done early? Adjust'), findsNothing);
     expect(find.text('Return to Prism now'), findsOneWidget,
         reason: 'handing back manually must still be possible');
 

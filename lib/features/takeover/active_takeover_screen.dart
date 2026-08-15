@@ -185,7 +185,11 @@ class ActiveTakeoverScreen extends ConsumerWidget {
                       expanded: true,
                       icon: Icon(LucideIcons.clock,
                           size: 16, color: palette.textSecondary),
-                      label: 'Running long? Extend',
+                      // The sheet moves the deadline both ways now, so the
+                      // frame's "Running long? Extend" only described half of
+                      // it — and the half it hid is the one staff would never
+                      // have gone looking for behind that label.
+                      label: 'Running long or done early? Adjust',
                       onTap: () => showExtendSheet(context, ref),
                     ),
                   ],

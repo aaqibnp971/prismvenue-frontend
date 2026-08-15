@@ -11,12 +11,24 @@ import '../../shared/widgets/prism_top_bar.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
 
-/// S02-4 "More time — your audio keeps playing, Prism just waits longer".
+/// S02-4 "More time — your audio keeps playing, Prism just waits longer",
+/// widened to move the deadline in EITHER direction.
 ///
 /// Built to the frame: the current return time, +15/+30/+1 hour chips, an
 /// "Until we close" row fed by the venue's open hours, a live "New return"
-/// preview, "Push it back" as the CTA, and "Remove auto-return instead"
-/// beneath it.
+/// preview, and "Remove auto-return instead" beneath it.
+///
+/// The reduce row is an addition beyond the frames. S02-4 only ever answers
+/// "running long", but a set that finishes early is just as ordinary, and
+/// without this the only way to shorten a takeover was to end it outright —
+/// which hands the room back immediately rather than in ten minutes. The
+/// title and CTA moved off "More time" / "Push it back" because the sheet no
+/// longer only adds, and copy that promises one direction while offering two
+/// is worse than copy the frames did not specify.
+///
+/// Reducing is floored a minute out, matching the server. Ending a takeover is
+/// "Return to Prism now" — explicit, and not something a "-30" should trigger
+/// by accident.
 Future<void> showExtendSheet(BuildContext context, WidgetRef ref) async {
   final result = await showPrismSheet<_ExtendResult>(
     context,
@@ -53,6 +65,16 @@ const _chips = [
   ('+1 hour', Duration(hours: 1)),
 ];
 
+/// Bring Prism back sooner. Not in the frames — see the class doc.
+const _reduceChips = [
+  ('-15 min', Duration(minutes: -15)),
+  ('-30 min', Duration(minutes: -30)),
+];
+
+/// The server floors the new deadline here, so the sheet must not offer or
+/// preview anything below it.
+const _minRemaining = Duration(minutes: 1);
+
 class _ExtendSheet extends ConsumerStatefulWidget {
   const _ExtendSheet();
 
@@ -62,7 +84,17 @@ class _ExtendSheet extends ConsumerStatefulWidget {
 
 class _ExtendSheetState extends ConsumerState<_ExtendSheet> {
   var _index = 1; // +30 min — the frame's selected default
+  var _reduceIndex = -1; // -1 = no reduce chip chosen
   var _untilClose = false;
+
+  /// One selection across all three groups: picking any chip clears the others,
+  /// so the "New return" preview can never describe two answers at once.
+  void _select({int? add, int? reduce, bool untilClose = false}) =>
+      setState(() {
+        _index = add ?? _index;
+        _reduceIndex = reduce ?? -1;
+        _untilClose = untilClose;
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -91,17 +123,31 @@ class _ExtendSheetState extends ConsumerState<_ExtendSheet> {
       if (addition > Duration.zero) untilCloseAddition = addition;
     }
 
-    final chosen =
-        _untilClose ? (untilCloseAddition ?? Duration.zero) : _chips[_index].$2;
+    final requested = _untilClose
+        ? (untilCloseAddition ?? Duration.zero)
+        : _reduceIndex >= 0
+            ? _reduceChips[_reduceIndex].$2
+            : _chips[_index].$2;
+
+    // What the SERVER will actually do. It floors the new deadline a minute
+    // out, so "-30" with ten minutes left lands on one minute, not on minus
+    // twenty. Previewing the request rather than the outcome would promise a
+    // return time that never happens.
+    final chosen = remaining + requested < _minRemaining
+        ? _minRemaining - remaining
+        : requested;
+
     final newReturn = currentReturn.add(chosen);
+    // Nothing to do when the clamp has eaten the whole reduction — the room is
+    // already as close to hand-back as this sheet can bring it.
+    final canApply = chosen != Duration.zero;
 
     return PrismBottomSheet(
-      title: 'More time',
-      sub: 'Your audio keeps playing — Prism just waits longer.',
-      primaryLabel: 'Push it back',
-      onPrimary: chosen > Duration.zero
-          ? () => Navigator.of(context).pop(_Extend(chosen))
-          : null,
+      title: 'Return time',
+      sub: 'Your audio keeps playing — this only moves when Prism comes back.',
+      primaryLabel: 'Update return',
+      onPrimary:
+          canApply ? () => Navigator.of(context).pop(_Extend(chosen)) : null,
       onCancel: () => Navigator.of(context).pop(),
       footer: Column(
         children: [
@@ -129,7 +175,7 @@ class _ExtendSheetState extends ConsumerState<_ExtendSheet> {
               fontSize: 11, color: palette.textSecondary),
         ),
         const SizedBox(height: 16),
-        Text('Add time',
+        Text('Push it back',
             style: PrismType.label.copyWith(color: palette.textSecondary)),
         const SizedBox(height: 8),
         Row(
@@ -138,11 +184,29 @@ class _ExtendSheetState extends ConsumerState<_ExtendSheet> {
               if (i > 0) const SizedBox(width: 8),
               _Chip(
                 label: label,
-                selected: !_untilClose && _index == i,
-                onTap: () => setState(() {
-                  _index = i;
-                  _untilClose = false;
-                }),
+                selected: !_untilClose && _reduceIndex < 0 && _index == i,
+                onTap: () => _select(add: i),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text('Bring it back sooner',
+            style: PrismType.label.copyWith(color: palette.textSecondary)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            for (final (i, (label, _)) in _reduceChips.indexed) ...[
+              if (i > 0) const SizedBox(width: 8),
+              _Chip(
+                label: label,
+                selected: _reduceIndex == i,
+                // Inert once the room is already at the floor: there is nothing
+                // left to give back, and "Return to Prism now" is the control
+                // for handing it over outright.
+                onTap: remaining <= _minRemaining
+                    ? null
+                    : () => _select(reduce: i),
               ),
             ],
           ],
@@ -155,7 +219,7 @@ class _ExtendSheetState extends ConsumerState<_ExtendSheet> {
             // Inert (40%) when closing time no longer pushes the return later.
             onTap: untilCloseAddition == null
                 ? null
-                : () => setState(() => _untilClose = true),
+                : () => _select(untilClose: true),
           ),
         ],
         const SizedBox(height: 14),

@@ -172,9 +172,22 @@ class MockPlaybackRepo implements PlaybackRepo {
   @override
   Future<void> extendTakeover(Duration by) async {
     if (!_takeover.active) return;
-    // §6-A7: extend adds the chosen duration.
-    _emitTakeover(_zoneId(), _takeover.copyWith(remaining: _takeover.remaining + by));
+    // §6-A7: extend adds the chosen duration. A negative [by] subtracts, for a
+    // set that finished early.
+    //
+    // Floored at a minute, exactly as the server floors it — reducing must
+    // never end the takeover, which is what "Return to Prism now" is for. The
+    // mock has to clamp the way the API clamps or the sheet's preview is
+    // rehearsed against behaviour the backend does not have.
+    final next = _takeover.remaining + by;
+    _emitTakeover(
+        _zoneId(),
+        _takeover.copyWith(
+          remaining: next < _minRemaining ? _minRemaining : next,
+        ));
   }
+
+  static const _minRemaining = Duration(minutes: 1);
 
   @override
   Future<void> removeAutoReturn() async {
