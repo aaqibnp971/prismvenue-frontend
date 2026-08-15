@@ -18,6 +18,7 @@ class ScheduleRail extends StatelessWidget {
     super.key,
     required this.entries,
     required this.nowIndex,
+    this.nextIndex = -1,
     this.selfDrive = false,
     this.offSchedule = false,
     this.horizontal = false,
@@ -25,6 +26,10 @@ class ScheduleRail extends StatelessWidget {
 
   final List<ScheduleEntry> entries;
   final int nowIndex;
+
+  /// First entry still to come, or -1 when the day is done. Drives "up next"
+  /// and, with [nowIndex], which rows are over.
+  final int nextIndex;
 
   /// S03-1: Prism is picking the vibe itself, so the saved plan is not
   /// running. Listing dayparts with a highlighted "NOW" row would claim a
@@ -102,8 +107,12 @@ class ScheduleRail extends StatelessWidget {
       final entry = entries[i];
       final mood = moodById(entry.moodId);
       final current = i == nowIndex;
-      final past = i < nowIndex;
-      final next = i == nowIndex + 1;
+      // Over: earlier than the next one still to come, and not the one
+      // playing. `i < nowIndex` was only right while something was underway —
+      // in a gap it dimmed nothing, so a block that ended hours ago read as
+      // upcoming. A day with nothing left (nextIndex -1) is entirely past.
+      final past = !current && (nextIndex < 0 || i < nextIndex);
+      final next = i == nextIndex;
 
       final content = Row(
         children: [
@@ -265,7 +274,7 @@ class ScheduleRail extends StatelessWidget {
     final entry = entries[i];
     final mood = moodById(entry.moodId);
     final current = i == nowIndex;
-    final past = i < nowIndex;
+    final past = !current && (nextIndex < 0 || i < nextIndex);
 
     final chip = Container(
       padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 10),

@@ -135,6 +135,7 @@ class TodaySchedule {
     required this.entries,
     required this.nowIndex,
     required this.auto,
+    this.nextIndex = -1,
     this.selfDrive = false,
   });
 
@@ -155,6 +156,14 @@ class TodaySchedule {
   /// next daypart begins (migration 010 deliberately does not snap it to
   /// silence or to a default).
   bool get nothingScheduledNow => nowIndex < 0;
+
+  /// First daypart still to come, or -1 when the day is done.
+  ///
+  /// Cannot be derived from [nowIndex]. With nothing underway the first row of
+  /// the day is not necessarily the next one — the earlier ones may simply have
+  /// ended, which is what a rail showing "up next" against a finished 8:00
+  /// block was getting wrong.
+  final int nextIndex;
 
   /// Rail header chip ("Auto") — Prism driving on schedule.
   final bool auto;

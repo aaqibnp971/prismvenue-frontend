@@ -24,6 +24,7 @@ class HeroCard extends StatelessWidget {
     this.takeoverActive = false,
     this.takeOverLabel = 'Take over',
     this.hasPlanToday = true,
+    this.nothingScheduledNow = false,
     this.onTogglePause,
     this.onTakeOver,
     this.onReturnToAuto,
@@ -66,10 +67,14 @@ class HeroCard extends StatelessWidget {
   /// Label for the S02 button — see [TakeOverButton.label].
   final String takeOverLabel;
 
-  /// Whether the plan is giving this room anything right now — see
-  /// [AutoButton.hasPlan]. False both when today is empty and when today's
-  /// dayparts all sit at another time of day.
+  /// Whether today has a plan at all — see [AutoButton.hasPlan]. Drives the
+  /// dimming, and nothing else.
   final bool hasPlanToday;
+
+  /// Auto is following the plan, but no daypart covers this hour. Drives the
+  /// pill, and nothing else: returning to Auto here is still meaningful, so the
+  /// control stays live and the *sentence* carries the news.
+  final bool nothingScheduledNow;
   final VoidCallback? onTogglePause;
   final VoidCallback? onTakeOver;
 
@@ -116,7 +121,7 @@ class HeroCard extends StatelessWidget {
             // and it is the lie that hides the fact the schedule is not running.
             ? const StatusPill(
                 text: 'Off schedule · you chose this vibe', tone: PillTone.amber)
-            : !hasPlanToday
+            : nothingScheduledNow
                 // Auto IS on and the plan IS being followed — the plan just has
                 // nothing to say at this hour, so the room holds the last vibe
                 // until the next daypart begins. "Prism is driving" is true in

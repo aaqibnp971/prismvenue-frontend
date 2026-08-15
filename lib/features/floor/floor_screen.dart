@@ -50,20 +50,24 @@ class FloorScreen extends ConsumerWidget {
     // picks the vibe itself and Auto is meaningful with no dayparts at all,
     // which is the whole point of S03-1.
     //
-    // The question is "is the plan giving this room anything RIGHT NOW", not
-    // "does today have dayparts". Asking the weaker one missed the case that
-    // looks most broken: a full rail whose blocks all sit later in the evening,
-    // where Auto is on, correct, and visibly doing nothing. `nowIndex` answers
-    // the exact question, because the server computes it with the executor's
-    // own predicate.
+    // "Does today have a plan at all", NOT "is a daypart underway this minute".
+    //
+    // The stricter question was tried and is wrong. Returning to Auto in a gap
+    // is a perfectly meaningful act: it sets desired_mode='auto', so the next
+    // daypart drives the room even though this instant has nothing in it.
+    // Dimming the control then says "you cannot use this", which is false — and
+    // it says it while the rail beside it visibly shows a plan, which reads as
+    // the app disagreeing with itself.
+    //
+    // What the gap actually needs is to be NAMED, and the hero pill does that.
     final todaySchedule = schedule.value;
     // Loading: assume it is fine rather than dimming a control for a frame.
     final hasPlanToday = todaySchedule == null ||
         todaySchedule.selfDrive ||
-        !todaySchedule.nothingScheduledNow;
-    // Distinguishes the two explanations. A rail with blocks in it needs a very
-    // different sentence from an empty one.
-    final plannedToday = todaySchedule?.entries.isNotEmpty ?? false;
+        todaySchedule.entries.isNotEmpty;
+    // Auto is on and following the plan, but the plan has nothing for this
+    // hour. Drives the pill only — never the dimming.
+    final nothingScheduledNow = todaySchedule?.nothingScheduledNow ?? false;
 
     return Scaffold(
       body: Column(
@@ -155,6 +159,7 @@ class FloorScreen extends ConsumerWidget {
                         // so a zone with a full weekly plan can still have an
                         // empty Friday.
                         hasPlanToday: hasPlanToday,
+                        nothingScheduledNow: nothingScheduledNow,
                         onReturnToAuto: takeover.value?.active == true
                             ? null
                             : () async {
@@ -162,7 +167,6 @@ class FloorScreen extends ConsumerWidget {
                                   final open = await showNoScheduleDialog(
                                     context,
                                     canEdit: user.role != Role.floor,
-                                    plannedToday: plannedToday,
                                   );
                                   if (open == true && context.mounted) {
                                     context.go('/schedule');
@@ -222,6 +226,7 @@ class FloorScreen extends ConsumerWidget {
                           data: (today) => ScheduleRail(
                             entries: today.entries,
                             nowIndex: today.nowIndex,
+                            nextIndex: today.nextIndex,
                             selfDrive: today.selfDrive,
                             offSchedule:
                                 playback.value?.offSchedule ?? false,
@@ -248,6 +253,7 @@ class FloorScreen extends ConsumerWidget {
                       data: (today) => ScheduleRail(
                             entries: today.entries,
                             nowIndex: today.nowIndex,
+                            nextIndex: today.nextIndex,
                             selfDrive: today.selfDrive,
                             offSchedule:
                                 playback.value?.offSchedule ?? false,

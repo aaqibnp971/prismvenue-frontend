@@ -337,13 +337,14 @@ void main() {
     expect(find.text('Nothing scheduled right now · holding this vibe'),
         findsOneWidget);
 
-    expect(tester.widget<AutoButton>(find.byType(AutoButton)).hasPlan, isFalse);
+    // NOT dimmed. Returning to Auto here re-arms the plan for the next block,
+    // so the control is live — dimming it would say "you cannot use this" while
+    // the rail beside it visibly shows a plan.
+    expect(tester.widget<AutoButton>(find.byType(AutoButton)).hasPlan, isTrue);
 
+    // And it does the real thing rather than opening the no-plan dialog.
     await tester.tap(find.byType(AutoButton));
     await _settle(tester);
-    // Different copy from the empty-today case: the plan exists, it just has a
-    // hole where now is.
-    expect(find.text('Nothing is scheduled right now'), findsOneWidget);
     expect(find.text('Nothing is planned for today'), findsNothing);
   });
 

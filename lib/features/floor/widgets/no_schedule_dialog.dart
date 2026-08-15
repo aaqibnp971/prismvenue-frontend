@@ -5,14 +5,14 @@ import '../../../shared/widgets/confirm_dialog.dart';
 import '../../../shared/widgets/prism_top_bar.dart';
 import '../../../theme/palette.dart';
 
-/// Answers a tap on Auto when there is no schedule for Auto to follow *now*.
+/// Answers a tap on Auto when there is no schedule for Auto to follow.
 ///
-/// Two shapes, [plannedToday] tells them apart: today has no dayparts at all,
-/// or it has some and none covers this moment — the plan resumes at 8pm and it
-/// is currently 6:42. The second is by far the more confusing of the two,
-/// because the rail is visibly full while Auto does nothing.
+/// Only for a day with NO dayparts. A day whose dayparts merely sit at another
+/// hour is a different thing and is not routed here: returning to Auto there is
+/// meaningful — it re-arms the plan for the next block — so the control stays
+/// live and the hero pill names the gap instead.
 ///
-/// "Auto" means "follow the schedule". With nothing planned for now the
+/// "Auto" means "follow the schedule". With nothing planned for today the
 /// button is an offer the app cannot keep: `desired_mode` flips to auto,
 /// `app.scheduled_mood_for` returns NULL because no daypart covers the moment,
 /// and — by design, migration 010 — the room keeps whatever it was already
@@ -32,7 +32,7 @@ import '../../../theme/palette.dart';
 /// offering to take them there would be a button that bounces them back to
 /// Floor. They get told who can fix it instead.
 Future<bool?> showNoScheduleDialog(BuildContext context,
-    {required bool canEdit, bool plannedToday = false}) {
+    {required bool canEdit}) {
   final palette = Theme.of(context).extension<PrismPalette>()!;
   return showPrismDialog<bool>(
     context,
@@ -41,28 +41,15 @@ Future<bool?> showNoScheduleDialog(BuildContext context,
       builder: (dialogContext) => ConfirmDialog(
         icon:
             Icon(LucideIcons.calendarPlus, size: 20, color: palette.accentText),
-        title: plannedToday
-            ? 'Nothing is scheduled right now'
-            : 'Nothing is planned for today',
+        title: 'Nothing is planned for today',
         body: TextSpan(
-          text: plannedToday
-              ? (canEdit
-                  ? 'Auto is on and following your weekly plan — but no '
-                      'daypart covers this time of day, so there is nothing '
-                      'for Prism to pick up yet. The room keeps this vibe '
-                      'until the next one begins. Widen a daypart to cover '
-                      'now, or add one.'
-                  : 'Auto is on and following the weekly plan — but no '
-                      'daypart covers this time of day, so the room keeps '
-                      'this vibe until the next one begins. A manager can '
-                      'change that from the Schedule tab.')
-              : (canEdit
-                  ? 'Auto follows your weekly plan, and today has no dayparts '
-                      'in it — so there is nothing for Prism to pick up. Add a '
-                      'daypart and the room will follow it from then on.'
-                  : 'Auto follows the weekly plan, and today has no dayparts '
-                      'in it — so there is nothing for Prism to pick up. A '
-                      'manager can add one from the Schedule tab.'),
+          text: canEdit
+              ? 'Auto follows your weekly plan, and today has no dayparts in '
+                  'it — so there is nothing for Prism to pick up. Add a '
+                  'daypart and the room will follow it from then on.'
+              : 'Auto follows the weekly plan, and today has no dayparts in '
+                  'it — so there is nothing for Prism to pick up. A manager '
+                  'can add one from the Schedule tab.',
         ),
         confirmLabel: canEdit ? 'Open Schedule' : 'Got it',
         cancelLabel: canEdit ? 'Not now' : null,

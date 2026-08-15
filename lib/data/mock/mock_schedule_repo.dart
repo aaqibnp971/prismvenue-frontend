@@ -95,6 +95,11 @@ class MockScheduleRepo implements ScheduleRepo {
   TodaySchedule get _today => TodaySchedule(
         auto: true,
         nowIndex: (emptyToday || nothingScheduledNow) ? -1 : 2,
+        // The row after the current one, and for the gap case a later one —
+        // "nothing on right now, the plan resumes at 6pm" is what that state
+        // looks like, and a mock that said -1 here would render the whole day
+        // as over instead.
+        nextIndex: emptyToday ? -1 : 3,
         selfDrive: _z.mode == ScheduleMode.selfDrive,
         entries: emptyToday ? const [] : _todayEntries,
       );
