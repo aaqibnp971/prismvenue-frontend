@@ -14,6 +14,7 @@ import '../../shared/widgets/status_pill.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
 import 'daypart_sheet.dart';
+import 'follow_every_week_dialog.dart';
 import 'week_grid.dart';
 import 'week_picker.dart';
 
@@ -176,6 +177,23 @@ class _WeekPlan extends ConsumerWidget {
   final VoidCallback onNextWeek;
   final VoidCallback onPickWeek;
 
+  /// Offers to give the week back to the recurring plan.
+  ///
+  /// Confirmed, because it discards this week's own dayparts and nothing else
+  /// on screen would say so — the same rule as every other change the room will
+  /// hear.
+  Future<void> _offerUnfork(
+      BuildContext context, WidgetRef ref, DateTime weekStart) async {
+    final confirmed = await showFollowEveryWeekDialog(context);
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await ref.read(scheduleRepoProvider).unforkWeek(weekStart);
+    } catch (e) {
+      if (context.mounted) showPrismError(context, e);
+    }
+  }
+
+  @override
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final palette = Theme.of(context).extension<PrismPalette>()!;
@@ -213,11 +231,27 @@ class _WeekPlan extends ConsumerWidget {
               // recurring plan. Without it the divergence is invisible, and the
               // failure mode is a manager changing "every week" in March and
               // wondering why one week in the calendar ignored it.
-              const StatusPill(text: 'Just this week', tone: PillTone.amber),
+              //
+              // Tappable, because saying it was never enough on its own: the
+              // fork was one-way, so a manager who read the pill, understood
+              // it, and wanted out had to delete the week's dayparts one by
+              // one. The label is the way back.
+              Pressable(
+                onTap: () => _offerUnfork(context, ref, weekStart),
+                child: const StatusPill(
+                    text: 'Just this week', tone: PillTone.amber),
+              ),
             ],
             const Spacer(),
             Pressable(
-              onTap: () => showDaypartSheet(context, ref, weekStart: weekStart),
+              onTap: () => showDaypartSheet(context, ref,
+                  weekStart: weekStart,
+                  // The same `forked` the pill above is drawn from. Without it
+                  // "+ Add" offered "Every week" on a week that ignores the
+                  // recurring plan (migration 011), so the new daypart was
+                  // written somewhere real, was correct, and was invisible —
+                  // in the one week the manager was looking at.
+                  alreadyForked: forked),
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(vertical: 8, horizontal: 14),

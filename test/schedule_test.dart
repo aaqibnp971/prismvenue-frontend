@@ -136,6 +136,66 @@ void main() {
     expect(find.text('Evening warmth'), findsNWidgets(6));
   });
 
+  testWidgets('adding to a forked week cannot be aimed at every week',
+      (tester) async {
+    // "+ Add" did not know the week had forked, so it offered "Every week" on a
+    // week that ignores the recurring plan entirely (migration 011). The
+    // daypart was written correctly, to a real row, and never appeared — in the
+    // one week the manager was looking at.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    // Fork the week through the sheet, which is the only thing that creates one.
+    await tester.tap(find.text('+ Add'));
+    await _settle(tester);
+    await tester.tap(find.text('Just this week'));
+    await _settle(tester);
+    await tester.tap(find.text('Add daypart'));
+    await _settle(tester);
+    // It lands on the seeded 6–9pm block, so confirm the replacement.
+    if (find.text('Replace').evaluate().isNotEmpty) {
+      await tester.tap(find.text('Replace'));
+      await _settle(tester);
+    }
+
+    await tester.tap(find.text('+ Add'));
+    await _settle(tester);
+
+    // No choice offered, and the consequence stated instead of left silent.
+    expect(find.text('Every week'), findsNothing);
+    expect(find.textContaining('This week only'), findsOneWidget);
+  });
+
+  testWidgets('a forked week can be handed back to the weekly plan',
+      (tester) async {
+    // Forking was one-way, which is the expensive direction: the only way out
+    // was deleting the week's dayparts one at a time.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    await tester.tap(find.text('+ Add'));
+    await _settle(tester);
+    await tester.tap(find.text('Just this week'));
+    await _settle(tester);
+    await tester.tap(find.text('Add daypart'));
+    await _settle(tester);
+    if (find.text('Replace').evaluate().isNotEmpty) {
+      await tester.tap(find.text('Replace'));
+      await _settle(tester);
+    }
+
+    expect(find.text('Just this week'), findsOneWidget); // the header pill
+
+    await tester.tap(find.text('Just this week'));
+    await _settle(tester);
+    expect(find.text('Follow the weekly plan again?'), findsOneWidget);
+    await tester.tap(find.text('Follow every week'));
+    await _settle(tester);
+
+    // Back on the recurring plan, so the pill is gone.
+    expect(find.text('Just this week'), findsNothing);
+  });
+
   testWidgets('a time can be typed instead of dialled', (tester) async {
     // The dial is quick for "around 8" and slow for "23:05 exactly", which is
     // the case that turns up when somebody is copying a rota.

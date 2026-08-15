@@ -40,6 +40,7 @@ Future<void> showDaypartSheet(
     sheet: _DaypartSheet(
       existing: existing,
       canChooseScope: weekStart != null && !alreadyForked,
+      forkedWeek: alreadyForked,
     ),
   );
   if (result == null) return;
@@ -146,7 +147,11 @@ class _Delete extends _DaypartResult {
 }
 
 class _DaypartSheet extends StatefulWidget {
-  const _DaypartSheet({this.existing, this.canChooseScope = false});
+  const _DaypartSheet({
+    this.existing,
+    this.canChooseScope = false,
+    this.forkedWeek = false,
+  });
 
   final Daypart? existing;
 
@@ -156,6 +161,10 @@ class _DaypartSheet extends StatefulWidget {
   /// there is nothing left to decide, so asking again would imply the choice
   /// still meant something.
   final bool canChooseScope;
+
+  /// The week on screen has already forked. Mutually exclusive with
+  /// [canChooseScope]: one offers the decision, the other reports it.
+  final bool forkedWeek;
 
   @override
   State<_DaypartSheet> createState() => _DaypartSheetState();
@@ -251,6 +260,21 @@ class _DaypartSheetState extends State<_DaypartSheet> {
                 ? 'This week gets its own copy of the plan and stops following '
                     'later changes to every week.'
                 : 'Changes the plan every week follows.',
+            style: PrismType.microHelper
+                .copyWith(color: palette.textSecondary),
+          ),
+        ] else if (widget.forkedWeek) ...[
+          // The choice is gone, so the consequence has to be stated instead.
+          // Silence here is what let an edit look like it had not saved: the
+          // week is already its own copy, so the change is real and correct and
+          // simply does not reach any other week — and nothing said so.
+          const SizedBox(height: 14),
+          Text('Applies to',
+              style: PrismType.label.copyWith(color: palette.textSecondary)),
+          const SizedBox(height: 6),
+          Text(
+            'This week only. It has its own copy of the plan and no longer '
+            'follows the one every week uses.',
             style: PrismType.microHelper
                 .copyWith(color: palette.textSecondary),
           ),

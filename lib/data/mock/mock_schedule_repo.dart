@@ -166,6 +166,15 @@ class MockScheduleRepo implements ScheduleRepo {
     _emitPlan();
   }
 
+  @override
+  Future<void> unforkWeek(DateTime weekStart) async {
+    // Removing the week's own plan is the whole operation, exactly as on the
+    // server: what decides which plan is in effect is whether any rows exist
+    // for the week.
+    _z.forks.remove(weekStart);
+    _emitPlan();
+  }
+
   /// The list a write should land in — the watched week's fork when it has one,
   /// otherwise the recurring plan.
   List<Daypart> get _target {

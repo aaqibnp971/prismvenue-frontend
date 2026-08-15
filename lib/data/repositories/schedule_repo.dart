@@ -33,6 +33,15 @@ abstract class ScheduleRepo {
   /// asking.
   Future<void> forkWeek(DateTime weekStart);
 
+  /// Gives a forked week back to the recurring plan.
+  ///
+  /// Forking was one-way, and that is the expensive direction: a forked week
+  /// ignores the recurring plan entirely (migration 011), so every "every week"
+  /// edit afterwards is written correctly and is invisible in the week on
+  /// screen. Deleting the week's own rows IS the un-fork — the executor decides
+  /// which plan applies by whether any exist.
+  Future<void> unforkWeek(DateTime weekStart);
+
   /// Throws a 409 `daypart_slot_taken` when another daypart on the same day
   /// already starts at the same time, unless [replace] is set.
   ///

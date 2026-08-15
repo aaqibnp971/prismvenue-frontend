@@ -81,6 +81,15 @@ class ApiScheduleRepo implements ScheduleRepo {
       '${d.day.toString().padLeft(2, '0')}';
 
   @override
+  Future<void> unforkWeek(DateTime weekStart) async {
+    await _client.post(
+      '/zones/${_scope.requireZone()}/dayparts/unfork',
+      body: {'week_start': _iso(weekStart)},
+    );
+    await _refreshPlan();
+  }
+
+  @override
   Future<void> addDaypart(Daypart daypart, {bool replace = false}) async {
     // The client's `id` is ignored — the server assigns the real one, which is
     // why the sheet can construct a Daypart with an empty id.
