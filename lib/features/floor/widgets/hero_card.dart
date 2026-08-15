@@ -20,6 +20,7 @@ class HeroCard extends StatelessWidget {
     super.key,
     required this.state,
     required this.noise,
+    this.noiseLabel = 'Noise',
     this.onTogglePause,
     this.onTakeOver,
     this.onReturnToAuto,
@@ -44,6 +45,11 @@ class HeroCard extends StatelessWidget {
   /// 0–100, or null when nothing has reported. Null renders an empty track and
   /// a dash rather than inventing a plausible number — see [NoiseMeter].
   final int? noise;
+
+  /// What [noise] is measuring. The Floor screen passes "Output" because it
+  /// feeds the engine's own level; the default keeps the designed "Noise"
+  /// reading for anything showing real room telemetry.
+  final String noiseLabel;
   final VoidCallback? onTogglePause;
   final VoidCallback? onTakeOver;
 
@@ -198,7 +204,12 @@ class HeroCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 10),
-                NoiseMeter(value: noise),
+                // "Output", not "Noise": this is Prism's own level after the
+                // limiter, not room loudness. reported_noise_pct is the room
+                // measurement and nothing writes it — there is no ingest and no
+                // microphone in the system — so showing it would be a permanent
+                // dash. See lib/engine/engine_controller.dart.
+                NoiseMeter(value: noise, label: noiseLabel),
               ],
             ),
           ),

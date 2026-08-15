@@ -9,7 +9,21 @@ import '../../theme/typography.dart';
 /// "Noise" 10/600, track h6 r999 bg `tile2` max-w 260 with accent fill +
 /// 14px white thumb, value 12/700. The thumb is decorative (§6-A6).
 class NoiseMeter extends StatelessWidget {
-  const NoiseMeter({super.key, required this.value});
+  const NoiseMeter({super.key, required this.value, this.label = 'Noise'});
+
+  /// What the row is actually showing.
+  ///
+  /// "Noise" is room loudness from `zone_state.reported_noise_pct` — the
+  /// designed meaning, and still what this widget is named for. But there is no
+  /// telemetry ingest and no microphone anywhere in the system, so that column
+  /// is never written and the value is permanently unknown.
+  ///
+  /// The Floor hero therefore feeds it Prism's own **output** level instead,
+  /// read from the engine after the limiter, and relabels accordingly. Those
+  /// are genuinely different quantities — output is what Prism is emitting, not
+  /// how busy the room is — and calling one by the other's name would be the
+  /// same dishonesty as the old hardcoded 62%.
+  final String label;
 
   /// 0–100 (%), or null when nothing has reported yet.
   ///
@@ -27,7 +41,7 @@ class NoiseMeter extends StatelessWidget {
     final fillPct = known ?? 0;
     return Row(
       children: [
-        Text('Noise',
+        Text(label,
             style: PrismType.label
                 .copyWith(fontSize: 10, color: palette.textSecondary)),
         const SizedBox(width: 10),

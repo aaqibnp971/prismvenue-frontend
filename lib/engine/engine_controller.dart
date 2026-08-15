@@ -17,6 +17,8 @@
 /// than to the buttons that set them.
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/models/guardrails.dart';
@@ -41,6 +43,48 @@ final engineStatusProvider = StreamProvider<EngineStatus>((ref) {
   final engine = ref.watch(prismEngineProvider);
   return engine.statusChanges;
 });
+
+/// Prism's own output level, 0–100, polled for the Floor hero's meter. Null
+/// while nothing is playing.
+///
+/// **Polled, not pushed.** The level changes every audio block — thousands of
+/// times a second — and a stream of that would be pure waste for something a
+/// human reads a few times a second. 10 Hz is faster than the eye needs and
+/// costs one atomic load per tick.
+///
+/// `autoDispose` so the timer stops the moment the Floor screen is gone; there
+/// is nowhere else that renders this.
+///
+/// It reports what the ENGINE is emitting, which is why it is scaled from
+/// dBFS rather than linearly — see [_levelToPercent].
+final engineOutputLevelProvider = StreamProvider.autoDispose<int?>((ref) {
+  final engine = ref.watch(prismEngineProvider);
+  return Stream<int?>.periodic(
+    const Duration(milliseconds: 100),
+    (_) {
+      final level = engine.outputLevel;
+      return level == null ? null : _levelToPercent(level);
+    },
+  ).distinct();
+});
+
+/// Linear RMS → a percentage a human can read.
+///
+/// Straight `rms * 100` would be useless: hearing is logarithmic, and the
+/// engine's own numbers make that concrete — `amp = 0.4·x^1.5` with a 0.7
+/// master and a −3 dBFS ceiling puts ordinary playback around −20 dBFS, which
+/// is a linear amplitude of about 0.1. Every mood would sit in the bottom
+/// tenth of the bar and the meter would look broken.
+///
+/// So this maps −60 dBFS → 0% and 0 dBFS → 100%, which puts typical playback
+/// near two thirds and leaves visible travel both ways.
+int _levelToPercent(double rms) {
+  if (rms <= 0) return 0;
+  const floorDb = -60.0;
+  final db = 20 * (math.log(rms) / math.ln10);
+  final pct = ((db - floorDb) / -floorDb) * 100;
+  return pct.clamp(0, 100).round();
+}
 
 /// Drives the engine from app state. Watched once, near the app root.
 final engineControllerProvider = Provider<EngineController>((ref) {

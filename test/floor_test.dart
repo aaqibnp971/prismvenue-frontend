@@ -54,8 +54,18 @@ void main() {
     expect(find.text('Afternoon lift'), findsNWidgets(2));
     expect(find.text('Prism is driving'), findsOneWidget);
     expect(find.text('mid-afternoon · ~60% full · clear'), findsOneWidget);
-    expect(find.text('Noise'), findsOneWidget);
-    expect(find.text('62%'), findsOneWidget);
+    // "Output", not "Noise". The row used to show the mock's seeded 62% room
+    // noise, but nothing writes reported_noise_pct — there is no telemetry
+    // ingest and no microphone in the system — so it was fiction. It now shows
+    // Prism's own post-limiter level, which is a number this machine can
+    // actually measure.
+    //
+    // A dash here rather than a value: the widget test has no prism_core.dll to
+    // load, so the engine never plays and there is nothing to report. That is
+    // the honest reading, and the same one a paused room gives.
+    expect(find.text('Output'), findsOneWidget);
+    expect(find.text('Noise'), findsNothing);
+    expect(find.text('—'), findsOneWidget);
     expect(find.text('Take over'), findsOneWidget);
 
     // Moods block.

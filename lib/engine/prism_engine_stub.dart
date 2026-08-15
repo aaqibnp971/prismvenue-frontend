@@ -39,6 +39,10 @@ class PlatformPrismEngine implements PrismEngine {
   @override
   Future<void> applyInfluence(PsvNudge nudge) async {}
 
+  /// Always null: there is no engine here to measure.
+  @override
+  double? get outputLevel => null;
+
   @override
   Future<void> silence() async {}
 

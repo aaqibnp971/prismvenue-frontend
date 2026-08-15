@@ -7,6 +7,7 @@ import '../../app/venue_header.dart';
 import '../../data/repositories/playback_repo.dart';
 import '../../data/repositories/schedule_repo.dart';
 import '../../data/repositories/weather_repo.dart';
+import '../../engine/engine_controller.dart';
 import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/prism_top_bar.dart';
@@ -30,7 +31,11 @@ class FloorScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(sessionProvider);
     final playback = ref.watch(nowPlayingProvider);
-    final noise = ref.watch(noiseProvider);
+    // `noiseProvider` (reported_noise_pct) is deliberately NOT watched: nothing
+    // writes that column, so it is a permanent 0, and subscribing would only
+    // add a poll of an endpoint that can never answer. The repository method
+    // stays — it is the contract, and it becomes real the day telemetry ingest
+    // lands.
     final takeover = ref.watch(takeoverStateProvider);
     final schedule = ref.watch(todayScheduleProvider);
     final header = ref.watch(venueHeaderProvider);
@@ -80,10 +85,19 @@ class FloorScreen extends ConsumerWidget {
                         // context line is empty, which is always, today.
                         contextFallback:
                             ref.watch(weatherProvider).value?.label,
-                        // Null, not 62. That fallback was a frame sample value
-                        // rendered as live telemetry, so a zone whose sensor
-                        // had never reported showed a confident 62%.
-                        noise: noise.value,
+                        // Prism's own output level, not room noise.
+                        // `reported_noise_pct` is the room measurement and
+                        // nothing writes it — no telemetry ingest, no
+                        // microphone anywhere in the system — so it would be a
+                        // permanent dash. The engine's post-limiter level is a
+                        // real number this machine can actually measure, and
+                        // the label says so rather than borrowing "Noise".
+                        //
+                        // Still null, never 0, when the engine is not playing:
+                        // a stale reading is the same class of lie as the old
+                        // hardcoded 62%.
+                        noise: ref.watch(engineOutputLevelProvider).value,
+                        noiseLabel: 'Output',
                         onTogglePause: () async {
                           final repo = ref.read(playbackRepoProvider);
                           try {

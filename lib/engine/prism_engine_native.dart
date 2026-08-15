@@ -257,6 +257,27 @@ class PlatformPrismEngine implements PrismEngine {
           ));
   }
 
+  /// Prism's own output level, or null when nothing is being rendered.
+  ///
+  /// Deliberately null rather than 0 while silenced or stopped: the engine's
+  /// meter is driven BY the render path, so with the device stopped it holds
+  /// whatever it last read. Reporting that as a live level would be the same
+  /// class of lie as the old hardcoded 62% noise value.
+  ///
+  /// Failures return null rather than throwing. A meter is decoration; it must
+  /// not be able to take the dashboard down, and an older `prism_core.dll`
+  /// without this symbol would otherwise throw on every poll.
+  @override
+  double? get outputLevel {
+    final core = _core;
+    if (core == null || _silenced || !_deviceRunning) return null;
+    try {
+      return core.outputLevel;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Future<void> applyInfluence(PsvNudge nudge) =>
       _serialise('applyInfluence', () async {

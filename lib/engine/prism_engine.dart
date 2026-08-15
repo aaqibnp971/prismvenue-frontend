@@ -97,6 +97,19 @@ abstract class PrismEngine {
   /// audio is reloaded.
   Future<void> applyInfluence(PsvNudge nudge);
 
+  /// Smoothed level of what the engine is emitting, 0–1, or null when it is not
+  /// playing.
+  ///
+  /// **Not room noise.** prism-core has no capture path and no microphone; this
+  /// is Prism's own output, measured after the limiter. The UI must label it as
+  /// such — the Floor hero's meter says "Output" for exactly this reason.
+  ///
+  /// Null rather than 0 when silent, stopped or unsupported: the engine holds
+  /// its last reading when nothing is pulling audio, and a stale number is
+  /// worse than an honest blank. `NoiseMeter` already renders null as an empty
+  /// track and a dash.
+  double? get outputLevel;
+
   /// Stops rendering so someone else can own the speakers. This is what
   /// Takeover calls, and what Pause calls. Idempotent.
   Future<void> silence();
