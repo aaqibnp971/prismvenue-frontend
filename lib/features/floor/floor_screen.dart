@@ -45,14 +45,25 @@ class FloorScreen extends ConsumerWidget {
 
     // Is there anything for Auto to follow today?
     //
-    // Read off the rail's own data, so the dimmed button and the empty rail
-    // beside it can never disagree. Self-drive is excluded deliberately: there
-    // Prism picks the vibe itself and Auto is meaningful with no dayparts at
-    // all, which is the whole point of S03-1.
+    // Read off the rail's own data, so the dimmed button and the rail beside it
+    // can never disagree. Self-drive is excluded deliberately: there Prism
+    // picks the vibe itself and Auto is meaningful with no dayparts at all,
+    // which is the whole point of S03-1.
+    //
+    // The question is "is the plan giving this room anything RIGHT NOW", not
+    // "does today have dayparts". Asking the weaker one missed the case that
+    // looks most broken: a full rail whose blocks all sit later in the evening,
+    // where Auto is on, correct, and visibly doing nothing. `nowIndex` answers
+    // the exact question, because the server computes it with the executor's
+    // own predicate.
     final todaySchedule = schedule.value;
+    // Loading: assume it is fine rather than dimming a control for a frame.
     final hasPlanToday = todaySchedule == null ||
         todaySchedule.selfDrive ||
-        todaySchedule.entries.isNotEmpty;
+        !todaySchedule.nothingScheduledNow;
+    // Distinguishes the two explanations. A rail with blocks in it needs a very
+    // different sentence from an empty one.
+    final plannedToday = todaySchedule?.entries.isNotEmpty ?? false;
 
     return Scaffold(
       body: Column(
@@ -151,6 +162,7 @@ class FloorScreen extends ConsumerWidget {
                                   final open = await showNoScheduleDialog(
                                     context,
                                     canEdit: user.role != Role.floor,
+                                    plannedToday: plannedToday,
                                   );
                                   if (open == true && context.mounted) {
                                     context.go('/schedule');

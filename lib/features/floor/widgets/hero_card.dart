@@ -66,7 +66,9 @@ class HeroCard extends StatelessWidget {
   /// Label for the S02 button — see [TakeOverButton.label].
   final String takeOverLabel;
 
-  /// Whether Auto has a schedule to return to — see [AutoButton.hasPlan].
+  /// Whether the plan is giving this room anything right now — see
+  /// [AutoButton.hasPlan]. False both when today is empty and when today's
+  /// dayparts all sit at another time of day.
   final bool hasPlanToday;
   final VoidCallback? onTogglePause;
   final VoidCallback? onTakeOver;
@@ -114,7 +116,17 @@ class HeroCard extends StatelessWidget {
             // and it is the lie that hides the fact the schedule is not running.
             ? const StatusPill(
                 text: 'Off schedule · you chose this vibe', tone: PillTone.amber)
-            : const StatusPill(text: 'Prism is driving', dot: true);
+            : !hasPlanToday
+                // Auto IS on and the plan IS being followed — the plan just has
+                // nothing to say at this hour, so the room holds the last vibe
+                // until the next daypart begins. "Prism is driving" is true in
+                // letter and misleading in practice: it reads as "the schedule
+                // chose this", which sends a manager looking for a fault in
+                // Auto when the answer is a gap in their own plan.
+                ? const StatusPill(
+                    text: 'Nothing scheduled right now · holding this vibe',
+                    tone: PillTone.amber)
+                : const StatusPill(text: 'Prism is driving', dot: true);
 
     // The two controls together want ~260px. On a phone that leaves the mood
     // name a column barely wider than one word ("Mor / ning / calm"), so below

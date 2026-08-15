@@ -15,14 +15,24 @@ import '../repositories/schedule_repo.dart';
 /// invisible while the app had no way to change rooms and became actively
 /// misleading once "Open floor" started working on every zone.
 class MockScheduleRepo implements ScheduleRepo {
-  MockScheduleRepo({String? Function()? zoneId, this.emptyToday = false})
-      : _zoneId = zoneId ?? (() => null);
+  MockScheduleRepo({
+    String? Function()? zoneId,
+    this.emptyToday = false,
+    this.nothingScheduledNow = false,
+  }) : _zoneId = zoneId ?? (() => null);
 
   /// Today's rail comes back empty, as it does for a zone whose week is forked
   /// with nothing on this weekday — migration 011 never merges a fork with the
   /// recurring plan, so a full weekly plan can still have an empty Friday.
   /// Exercises the dimmed Auto button and its dialog.
   final bool emptyToday;
+
+  /// Today's rail is FULL but nothing in it covers this moment — the plan
+  /// resumes later in the evening. Distinct from [emptyToday] and much more
+  /// confusing on screen, because the rail visibly has blocks in it while Auto
+  /// correctly does nothing. Seen live on a zone whose only Saturday dayparts
+  /// ran 20:00–21:00, viewed at 18:42.
+  final bool nothingScheduledNow;
 
   /// Resolved at call time, exactly as `ApiScope` does it, so switching the
   /// session's zone repoints this repository with nothing to rebuild.
@@ -74,9 +84,17 @@ class MockScheduleRepo implements ScheduleRepo {
 
   /// Rebuilt per read so switching mode moves the Floor rail too — the plan
   /// only "runs" on a custom plan.
+  ///
+  /// `nowIndex` follows the entries rather than being a constant. The server
+  /// returns -1 when nothing in the plan covers this moment, and an empty rail
+  /// is the clearest case of that — a mock that answered 2 over no entries
+  /// claimed a current daypart that does not exist, which is exactly the shape
+  /// of bug the real rail had. The seeded plan is contiguous and covers the
+  /// whole day, so a non-empty one always has something current; 2 keeps the
+  /// afternoon block highlighted as before.
   TodaySchedule get _today => TodaySchedule(
         auto: true,
-        nowIndex: 2,
+        nowIndex: (emptyToday || nothingScheduledNow) ? -1 : 2,
         selfDrive: _z.mode == ScheduleMode.selfDrive,
         entries: emptyToday ? const [] : _todayEntries,
       );

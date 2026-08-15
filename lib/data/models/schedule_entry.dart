@@ -139,7 +139,22 @@ class TodaySchedule {
   });
 
   final List<ScheduleEntry> entries;
+
+  /// Index of the daypart underway right now, or **-1** when the plan has
+  /// nothing for this moment — before the first of the day, after the last, or
+  /// in a gap between two.
+  ///
+  /// Server-computed with the same predicate as `app.scheduled_mood_for`, so
+  /// the rail cannot claim a mood the executor is not playing. It used to be
+  /// "the last daypart that started, else 0", which marked a row NOW hours
+  /// before it began and kept marking one hours after it ended.
   final int nowIndex;
+
+  /// True when nothing in the plan covers this moment. Auto can be on and this
+  /// still be true: the room simply holds whatever it was playing until the
+  /// next daypart begins (migration 010 deliberately does not snap it to
+  /// silence or to a default).
+  bool get nothingScheduledNow => nowIndex < 0;
 
   /// Rail header chip ("Auto") — Prism driving on schedule.
   final bool auto;

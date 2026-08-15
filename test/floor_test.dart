@@ -293,6 +293,60 @@ void main() {
     expect(find.text('Hello!'), findsOneWidget);
   });
 
+  testWidgets('a full rail with nothing on right now says so', (tester) async {
+    // The case that reads as a broken Auto button. The rail is full, Auto is on
+    // and correct, and tapping it does nothing — because no daypart covers this
+    // time of day. Seen live: a Saturday planned 20:00–21:00, viewed at 18:42,
+    // where the rail marked the 20:00 block "NOW" all afternoon and the hero
+    // said "Prism is driving".
+    await tester.binding.setSurfaceSize(const Size(1024, 768));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final container = ProviderContainer(overrides: [
+      playbackRepoProvider.overrideWith((ref) {
+        final repo = MockPlaybackRepo(tickNoise: false);
+        ref.onDispose(repo.dispose);
+        return repo;
+      }),
+      scheduleRepoProvider.overrideWith((ref) {
+        final repo = MockScheduleRepo(nothingScheduledNow: true);
+        ref.onDispose(repo.dispose);
+        return repo;
+      }),
+    ]);
+    addTearDown(container.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+        container: container, child: const PrismVenuesApp()));
+    await _settle(tester);
+    await tester.enterText(
+        find.byType(TextField).first, 'priya@marinacafe.com');
+    await tester.tap(find.text('Sign in'));
+    await _settle(tester);
+    await tester.tap(find.text('Schedule'));
+    await _settle(tester);
+    await tester.tap(find.text('Custom plan'));
+    await _settle(tester);
+    await tester.tap(find.text('Floor'));
+    await _settle(tester);
+
+    // The rail still has its blocks — this is not the empty case.
+    expect(find.text('Morning calm'), findsWidgets);
+
+    // "Prism is driving" is the sentence that sent a manager hunting for a
+    // fault in Auto. The honest one names the gap.
+    expect(find.text('Prism is driving'), findsNothing);
+    expect(find.text('Nothing scheduled right now · holding this vibe'),
+        findsOneWidget);
+
+    expect(tester.widget<AutoButton>(find.byType(AutoButton)).hasPlan, isFalse);
+
+    await tester.tap(find.byType(AutoButton));
+    await _settle(tester);
+    // Different copy from the empty-today case: the plan exists, it just has a
+    // hole where now is.
+    expect(find.text('Nothing is scheduled right now'), findsOneWidget);
+    expect(find.text('Nothing is planned for today'), findsNothing);
+  });
+
   testWidgets('Auto is dimmed and explains itself when today has no plan',
       (tester) async {
     // "Auto" means "follow the schedule". With nothing planned for today it is
