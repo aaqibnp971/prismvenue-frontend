@@ -30,6 +30,16 @@ void main() {
     expect(label(-210), 'GMT−3:30');
   });
 
+  test('the device clock is what a venue row is compared against', () {
+    // The mismatch line on Settings is the whole failure in one sentence: a
+    // daypart typed at 10pm on a device in India runs at 10pm in the Gulf, and
+    // every screen looked right while the room ignored the plan for 90 minutes.
+    expect(DeviceOffsets.currentClock(DateTime(2026, 8, 16, 0, 42)), '00:42');
+    expect(DeviceOffsets.currentClock(DateTime(2026, 8, 16, 9, 5)), '09:05');
+    expect(DeviceOffsets.currentMinutes(DateTime(2026, 8, 16)),
+        DateTime(2026, 8, 16).timeZoneOffset.inMinutes);
+  });
+
   test('the name splits into something readable', () {
     const option =
         TimezoneOption(name: 'America/Argentina/Buenos_Aires', utcOffsetMinutes: -180);

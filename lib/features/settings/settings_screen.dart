@@ -137,6 +137,17 @@ class SettingsScreen extends ConsumerWidget {
                       ),
                       SettingsRow(
                         title: 'Time zone',
+                        // Says out loud when the venue's clock is not the one
+                        // the manager is reading. This is the whole failure in
+                        // one line: a daypart typed at 10pm on a device in
+                        // India runs at 10pm in the Gulf, and every screen
+                        // looked right while the room ignored the plan for
+                        // ninety minutes. Only shown on a mismatch — a venue
+                        // that agrees with the device needs no commentary.
+                        sub: venue?.localTime == null ||
+                                venue!.localTime == _deviceClock()
+                            ? null
+                            : 'This device says ${_deviceClock()}',
                         // The venue's own wall clock beside the zone name, and
                         // it is the reason this row exists. `venues.timezone`
                         // decides which daypart is current — nothing else does
@@ -254,6 +265,12 @@ class _Group extends StatelessWidget {
     );
   }
 }
+
+/// This machine's wall clock, "HH:MM", to compare against the venue's.
+///
+/// Read at build time rather than ticked: the row is a settings entry, not a
+/// clock, and it only has to be right to the minute someone looks at it.
+String _deviceClock() => DeviceOffsets.currentClock();
 
 /// Loads the zone list, opens the picker, and writes the choice.
 ///

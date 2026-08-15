@@ -78,6 +78,21 @@ class _TimezoneSheetState extends State<_TimezoneSheet> {
     ];
   }
 
+  /// Zones whose clock matches this machine's right now.
+  ///
+  /// Hoisted to the top of the list because "the same time as the device I am
+  /// holding" is overwhelmingly the answer someone opening this wants, and
+  /// hunting for it among six hundred alphabetical entries is what makes a
+  /// correct feature feel broken. Any of them is equally right today — they
+  /// share an offset — so the first is offered and the rest stay findable.
+  List<TimezoneOption> get _onThisDevice {
+    final offset = DeviceOffsets.currentMinutes();
+    return [
+      for (final o in _matches)
+        if (o.utcOffsetMinutes == offset) o,
+    ].take(4).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = Theme.of(context).extension<PrismPalette>()!;
@@ -125,17 +140,33 @@ class _TimezoneSheetState extends State<_TimezoneSheet> {
                 textAlign: TextAlign.center,
                 style: PrismType.bodySm.copyWith(color: palette.textTertiary)),
           )
-        else
+        else ...[
+          if (_onThisDevice.isNotEmpty) ...[
+            Text('On this device’s clock',
+                style: PrismType.microHelper
+                    .copyWith(color: palette.textTertiary)),
+            const SizedBox(height: 6),
+            for (final option in _onThisDevice) ...[
+              _row(palette, option),
+              const SizedBox(height: 6),
+            ],
+            const SizedBox(height: 8),
+            Text('All time zones',
+                style: PrismType.microHelper
+                    .copyWith(color: palette.textTertiary)),
+            const SizedBox(height: 6),
+          ],
           // Bounded rather than shrink-wrapped: the full tz database is ~600
           // rows, and a sheet that grows to fit them has no scroll of its own.
           SizedBox(
-            height: 320,
+            height: _onThisDevice.isEmpty ? 320 : 200,
             child: ListView.separated(
               itemCount: matches.length,
               separatorBuilder: (_, _) => const SizedBox(height: 6),
               itemBuilder: (context, i) => _row(palette, matches[i]),
             ),
           ),
+        ],
       ],
     );
   }

@@ -54,6 +54,21 @@ class DeviceOffsets {
   final int januaryMinutes;
   final int julyMinutes;
 
+  /// What this machine's clock is offset by *right now*, which is what decides
+  /// whether a venue's wall clock matches the one the manager is reading.
+  static int currentMinutes([DateTime? now]) =>
+      (now ?? DateTime.now()).timeZoneOffset.inMinutes;
+
+  /// "HH:MM" on this device, for comparing against the venue's own wall clock.
+  /// A string rather than an offset because that is the shape the server sends
+  /// back, and comparing the two answers the only question worth asking: does
+  /// this venue's clock read the same as mine?
+  static String currentClock([DateTime? now]) {
+    final t = now ?? DateTime.now();
+    return '${t.hour.toString().padLeft(2, '0')}:'
+        '${t.minute.toString().padLeft(2, '0')}';
+  }
+
   Map<String, dynamic> toJson() => {
         'january_minutes': januaryMinutes,
         'july_minutes': julyMinutes,
