@@ -32,41 +32,75 @@ class MoodGrid extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text('Moods',
-                style:
-                    PrismType.sectionH2.copyWith(color: palette.textPrimary)),
-            const Spacer(),
-            Text('Tap to change the vibe · one tap',
-                style: PrismType.label.copyWith(
-                    fontWeight: FontWeight.w400,
-                    color: palette.textSecondary)),
-          ],
-        ),
-        const SizedBox(height: 11),
-        for (var row = 0; row < 2; row++) ...[
-          if (row > 0) const SizedBox(height: 12),
-          Row(
+        LayoutBuilder(builder: (context, box) {
+          // The hint is the first thing to go. It restates what the tiles
+          // already invite, so on a phone it costs more than it explains —
+          // and left in place it pushed the section title itself off-screen.
+          final room = box.maxWidth >= 520;
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              for (var col = 0; col < 3; col++) ...[
-                if (col > 0) const SizedBox(width: 12),
-                Expanded(
-                  child: Builder(builder: (context) {
-                    final mood = moods[row * 3 + col];
-                    return MoodTile(
-                      mood: mood,
-                      state: stateFor(mood),
-                      meta: '${mood.bpm} BPM',
-                      onTap: onMoodTap == null ? null : () => onMoodTap!(mood),
-                    );
-                  }),
+              Text('Moods',
+                  style:
+                      PrismType.sectionH2.copyWith(color: palette.textPrimary)),
+              const Spacer(),
+              if (room)
+                Flexible(
+                  child: Text('Tap to change the vibe · one tap',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: PrismType.label.copyWith(
+                          fontWeight: FontWeight.w400,
+                          color: palette.textSecondary)),
+                ),
+            ],
+          );
+        }),
+        const SizedBox(height: 11),
+        // Six moods across two rows of three is the frame, and it assumes an
+        // iPad. At a phone's width three columns leave each tile about 90
+        // logical pixels wide — narrower than the word "Afternoon" — so the
+        // grid drops to two and runs three rows instead. Derived from the
+        // measured width rather than from a platform check, because a resized
+        // desktop window gets just as narrow.
+        LayoutBuilder(builder: (context, box) {
+          final columns = box.maxWidth < 560 ? 2 : 3;
+          final compact = columns < 3;
+          final rows = (moods.length + columns - 1) ~/ columns;
+          return Column(
+            children: [
+              for (var row = 0; row < rows; row++) ...[
+                if (row > 0) const SizedBox(height: 12),
+                Row(
+                  children: [
+                    for (var col = 0; col < columns; col++) ...[
+                      if (col > 0) const SizedBox(width: 12),
+                      Expanded(
+                        child: Builder(builder: (context) {
+                          final i = row * columns + col;
+                          // The last row can be short of a full set — six into
+                          // four does not divide. An empty cell keeps the
+                          // remaining tiles the same width as every other row's.
+                          if (i >= moods.length) return const SizedBox();
+                          final mood = moods[i];
+                          return MoodTile(
+                            mood: mood,
+                            state: stateFor(mood),
+                            meta: '${mood.bpm} BPM',
+                            compact: compact,
+                            onTap: onMoodTap == null
+                                ? null
+                                : () => onMoodTap!(mood),
+                          );
+                        }),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ],
-          ),
-        ],
+          );
+        }),
       ],
     );
   }

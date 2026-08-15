@@ -23,6 +23,7 @@ class MoodTile extends StatelessWidget {
     this.state = MoodTileState.idle,
     this.meta,
     this.onTap,
+    this.compact = false,
   });
 
   final Mood mood;
@@ -30,6 +31,11 @@ class MoodTile extends StatelessWidget {
 
   /// Meta line under the name (11.5). Content is screen-supplied.
   final String? meta;
+
+  /// Phone sizing: shorter, tighter, and the "Playing" pill gives up room
+  /// first. Set by the grid, which is the only thing that knows how many
+  /// columns it decided on.
+  final bool compact;
 
   final VoidCallback? onTap;
 
@@ -46,8 +52,12 @@ class MoodTile extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 124,
-        padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 15),
+        // Shorter on a phone. 124 is the frame's height against a three-across
+        // grid on an iPad; on a two-across phone grid it is six rows of tile
+        // and no room for anything else on the screen.
+        height: compact ? 96 : 124,
+        padding: EdgeInsets.symmetric(
+            vertical: compact ? 10 : 13, horizontal: compact ? 11 : 15),
         decoration: playing
             ? BoxDecoration(
                 gradient: mood.playingGradient(),
@@ -68,14 +78,22 @@ class MoodTile extends StatelessWidget {
                 if (playing) ...[
                   EqBars(color: white, animate: state == MoodTileState.playing),
                   const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 9),
-                    decoration: BoxDecoration(
-                      color: white.withValues(alpha: .25),
-                      borderRadius: BorderRadius.circular(999),
+                  // Flexible, because the pill is the widest thing on the row
+                  // and the tile can be half an iPad column wide. It shrinks
+                  // and ellipsises rather than pushing the bars off the tile.
+                  Flexible(
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                          vertical: 3, horizontal: compact ? 6 : 9),
+                      decoration: BoxDecoration(
+                        color: white.withValues(alpha: .25),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text('Playing',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: PrismType.micro.copyWith(color: white)),
                     ),
-                    child: Text('Playing',
-                        style: PrismType.micro.copyWith(color: white)),
                   ),
                 ] else ...[
                   Container(
@@ -90,9 +108,19 @@ class MoodTile extends StatelessWidget {
               ],
             ),
             const Spacer(),
-            Text(mood.name, style: PrismType.moodNameTile.copyWith(color: fg)),
+            // Single line and ellipsised. "Afternoon lift" wraps in a phone
+            // column, and a second line is taller than the tile — which
+            // Flutter answers by painting the overflow banner over the mood
+            // name itself, so the one word that matters is the one you lose.
+            Text(mood.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: PrismType.moodNameTile.copyWith(color: fg)),
             if (meta != null)
-              Text(meta!, style: PrismType.meta.copyWith(color: metaFg)),
+              Text(meta!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: PrismType.meta.copyWith(color: metaFg)),
           ],
         ),
       ),

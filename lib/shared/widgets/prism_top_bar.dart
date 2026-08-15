@@ -93,6 +93,13 @@ class PrismTopBar extends ConsumerWidget {
           // overflows. Above this width there is room for the symmetry, which
           // is what keeps the venue name truly centred (§2.0).
           final tight = constraints.maxWidth < 700;
+          // Narrower still, and the Dark/Light toggle has to go: it is ~110pt
+          // beside a 32pt avatar, against a venue name that has to stay
+          // legible. It is a convenience and it already has a permanent home
+          // in Settings → Appearance, whereas the avatar is the only route to
+          // the account menu and to signing out — so the toggle is what gives
+          // way, not the thing with no other door.
+          final showThemeToggle = constraints.maxWidth >= 480;
 
           final left = Row(
               mainAxisSize: MainAxisSize.min,
@@ -164,15 +171,17 @@ class PrismTopBar extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                SegToggle(
-                  options: const ['Dark', 'Light'],
-                  selected: mode == ThemeMode.dark ? 0 : 1,
-                  pill: true,
-                  onChanged: (i) => ref
-                      .read(themeModeProvider.notifier)
-                      .set(i == 0 ? ThemeMode.dark : ThemeMode.light),
-                ),
-                const SizedBox(width: 10),
+                if (showThemeToggle) ...[
+                  SegToggle(
+                    options: const ['Dark', 'Light'],
+                    selected: mode == ThemeMode.dark ? 0 : 1,
+                    pill: true,
+                    onChanged: (i) => ref
+                        .read(themeModeProvider.notifier)
+                        .set(i == 0 ? ThemeMode.dark : ThemeMode.light),
+                  ),
+                  const SizedBox(width: 10),
+                ],
                 GestureDetector(
                   onTap: onAvatarTap ?? () => _showAccountMenu(context, ref),
                   child: PrismAvatar(
@@ -183,11 +192,16 @@ class PrismTopBar extends ConsumerWidget {
 
           return Row(
             children: [
-              if (tight) left else Expanded(child: left),
+              if (tight) Flexible(child: left) else Expanded(child: left),
               const SizedBox(width: 12), // row gap 12 (§2.0)
               Flexible(child: centre),
               const SizedBox(width: 12),
-              if (tight) right else Expanded(child: right),
+              // Flexible rather than rigid when tight. `tight` was written for
+              // a narrow tablet, where letting the two clusters size themselves
+              // was the fix; a phone is narrower than the sum of them, so
+              // unconstrained children just overflow instead. They now give way
+              // — and each of them already ellipsises inside.
+              if (tight) Flexible(child: right) else Expanded(child: right),
             ],
           );
         },

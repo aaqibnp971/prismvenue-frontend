@@ -66,7 +66,10 @@ class AutoButton extends StatelessWidget {
       onTap: (active && hasPlan) ? null : onTap,
         child: Container(
           height: 50,
-          padding: const EdgeInsets.symmetric(horizontal: 22),
+          // Was a fixed 22. The Floor hero stretches this pair to share one
+          // row, so on a phone each gets about half the screen and 22 either
+          // side no longer leaves room for the label.
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: active ? palette.accentSoft : null,
             border: Border.all(
@@ -83,7 +86,12 @@ class AutoButton extends StatelessWidget {
             children: [
               Icon(LucideIcons.sparkles, size: 17, color: ink),
               const SizedBox(width: 9),
-              Text('Auto', style: PrismType.button.copyWith(color: ink)),
+              Flexible(
+                child: Text('Auto',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: PrismType.button.copyWith(color: ink)),
+              ),
             ],
           ),
         ),

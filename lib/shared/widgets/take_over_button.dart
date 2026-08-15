@@ -29,7 +29,11 @@ class TakeOverButton extends StatelessWidget {
       onTap: onTap,
       child: Container(
         height: 50,
-        padding: const EdgeInsets.symmetric(horizontal: 22),
+        // Was a fixed 22. The Floor hero stretches this pair to share one row,
+        // so on a phone each gets about half the screen and 22 either side no
+        // longer leaves room for the label — the text overflowed the border
+        // rather than the button shrinking.
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           border: Border.all(color: palette.borderStrong, width: 1.5),
           borderRadius: BorderRadius.circular(14),
@@ -42,8 +46,12 @@ class TakeOverButton extends StatelessWidget {
           children: [
             Icon(LucideIcons.headphones, size: 17, color: palette.textPrimary),
             const SizedBox(width: 9),
-            Text(label,
-                style: PrismType.button.copyWith(color: palette.textPrimary)),
+            Flexible(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: PrismType.button.copyWith(color: palette.textPrimary)),
+            ),
           ],
         ),
       ),

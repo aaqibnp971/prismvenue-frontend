@@ -73,12 +73,22 @@ class PrismBottomNav extends StatelessWidget {
                       Icon(LucideIcons.lock, size: 9, color: color),
                       const SizedBox(width: 3),
                     ],
-                    Text(
-                      label,
-                      style: PrismType.label.copyWith(
-                        fontWeight:
-                            isActive && !locked ? FontWeight.w700 : FontWeight.w600,
-                        color: color,
+                    // Flexible + ellipsis: four or five tabs across a 320pt
+                    // phone leaves each about 60pt, and "Schedule" beside a
+                    // lock glyph does not fit. The icon above carries the
+                    // meaning; a clipped word beside a striped banner does not.
+                    Flexible(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: PrismType.label.copyWith(
+                          fontWeight: isActive && !locked
+                              ? FontWeight.w700
+                              : FontWeight.w600,
+                          color: color,
+                        ),
                       ),
                     ),
                   ],

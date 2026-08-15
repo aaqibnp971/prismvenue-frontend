@@ -57,8 +57,12 @@ class PortfolioScreen extends ConsumerWidget {
                   Row(
                     children: [
                       // §6-B5: sort options beyond "Needs attention" are an
-                      // open question — single inert chip.
-                      Container(
+                      // open question — single inert chip. Flexible so the
+                      // "+ Venue" button beside it keeps its full label on a
+                      // phone: the chip is inert, the button is the only way
+                      // to add a venue, so the chip is what gives way.
+                      Flexible(
+                        child: Container(
                         padding: const EdgeInsets.symmetric(
                             vertical: 6, horizontal: 12),
                         decoration: BoxDecoration(
@@ -66,9 +70,12 @@ class PortfolioScreen extends ConsumerWidget {
                           border: Border.all(color: palette.border),
                           borderRadius: BorderRadius.circular(999),
                         ),
-                        child: Text('Needs attention',
-                            style: PrismType.bodySm.copyWith(
-                                fontSize: 11.5, color: palette.textPrimary)),
+                          child: Text('Needs attention',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: PrismType.bodySm.copyWith(
+                                  fontSize: 11.5, color: palette.textPrimary)),
+                        ),
                       ),
                       const Spacer(),
                       Pressable(
