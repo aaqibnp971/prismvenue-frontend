@@ -209,9 +209,60 @@ void main() {
       ) as Map<String, dynamic>;
       expect(body['start_hour'], 14);
       expect(body['end_hour'], 18);
+      expect(body['start_minute'], 0);
+      expect(body['end_minute'], 0);
       expect(body.containsKey('range_label'), isFalse);
       // The server assigns the real id; the client's empty one is ignored.
       expect(body.containsKey('id'), isFalse);
+    });
+
+    test('sends minutes, and reads them back', () async {
+      // A daypart boundary is not always on the hour. The column always held
+      // minutes; the wire and the write path are what were hour-only, so this
+      // asserts on the body rather than on anything the UI renders.
+      routes['/dayparts'] = <Object>[];
+      routes['/today'] = {'entries': [], 'now_index': 0, 'auto': true};
+      final repo = ApiScheduleRepo(buildClient(), scope());
+
+      await repo.addDaypart(const Daypart(
+        id: '',
+        dayIndex: 2,
+        startHour: 6,
+        endHour: 11,
+        startMinute: 30,
+        endMinute: 45,
+        moodId: 'afternoon-lift',
+      ));
+
+      final body = jsonDecode(
+        sent.firstWhere((r) => r.method == 'POST').body,
+      ) as Map<String, dynamic>;
+      expect(body['start_hour'], 6);
+      expect(body['start_minute'], 30);
+      expect(body['end_hour'], 11);
+      expect(body['end_minute'], 45);
+    });
+
+    test('a server that sends no minutes still reads as whole hours', () async {
+      // Both fields are defaulted rather than required, so a backend that
+      // predates minute precision keeps working instead of throwing on a null.
+      routes['/dayparts'] = [
+        {
+          'id': 'd1',
+          'day_index': 0,
+          'start_hour': 7,
+          'end_hour': 11,
+          'range_label': '7 – 11 am',
+          'mood_id': 'morning-calm',
+        }
+      ];
+
+      final plan =
+          await ApiScheduleRepo(buildClient(), scope()).watchWeekPlan(null).first;
+
+      expect(plan.single.startMinute, 0);
+      expect(plan.single.endMinute, 0);
+      expect(plan.single.startMinutesOfDay, 7 * 60);
     });
   });
 

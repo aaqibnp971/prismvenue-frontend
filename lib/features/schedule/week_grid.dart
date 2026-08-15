@@ -154,16 +154,23 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
     final dragging = ghost != null;
 
     final mood = moodById(daypart.moodId);
+    // Fractional hours, so a 7:30 block sits half a column in rather than
+    // rendering as 7:00. A drag moves whole hours and carries the minutes
+    // along untouched, so these come from the model either way.
+    final startAt = startHour + daypart.startMinute / 60.0;
+    final endAt = endHour + daypart.endMinute / 60.0;
     // Blocks outside the open-hours window are clamped into view rather than
     // hidden — an invisible block is one a manager cannot fix.
-    final left = ((startHour - openHour).clamp(0, closeHour - openHour)) * pxPerHour;
-    final right = ((endHour - openHour).clamp(0, closeHour - openHour)) * pxPerHour;
+    final left =
+        (startAt - openHour).clamp(0, closeHour - openHour) * pxPerHour;
+    final right = (endAt - openHour).clamp(0, closeHour - openHour) * pxPerHour;
 
     // While dragging, the label has to come from the dragged position, not the
     // model — and Daypart.copyWith drops serverRangeLabel, so formatting it
     // here keeps the local origin obvious at the call site.
     final label = dragging
-        ? Daypart.formatRange(startHour, endHour)
+        ? Daypart.formatRange(startHour, endHour,
+            startMinute: daypart.startMinute, endMinute: daypart.endMinute)
         : daypart.rangeLabel;
 
     return Positioned(
@@ -282,10 +289,11 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
 
     final delta = globalPosition - origin;
 
-    // One hour is the only granularity the model can express: startHour and
-    // endHour are ints, and the wire sends them as ints. It also matches the
-    // hour dial the sheet uses, so a drag can never produce a time the sheet
-    // is then unable to edit.
+    // A drag moves in whole hours and leaves the minutes exactly where they
+    // were, so dragging a 7:30–11:30 block one column right gives 8:30–11:30
+    // rather than snapping it to the hour. Coarse positioning is what a finger
+    // on a week-wide grid can actually express; the sheet's dial is the path
+    // to a precise time, and it can reach anything a drag produces.
     final hourSteps = (delta.dx / pxPerHour).round();
     final daySteps = (delta.dy / rowHeight).round();
 

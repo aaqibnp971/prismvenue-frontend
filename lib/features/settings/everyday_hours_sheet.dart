@@ -65,20 +65,26 @@ class _EverydayHoursSheetState extends State<_EverydayHoursSheet> {
             Expanded(
               child: TimeField(
                 label: 'Opens',
-                hour: _open,
+                minutes: _open * 60,
                 big: true,
                 dialTitle: 'Opening time',
-                onChanged: (h) => setState(() => _open = h),
+                // The dial reports minutes; with the default 60-minute step
+                // that is always a whole hour, and `open_hour`/`close_hour`
+                // are what the wire carries.
+                onChanged: (m) => setState(() => _open = m ~/ 60),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: TimeField(
                 label: 'Closes',
-                hour: _close,
+                minutes: _close * 60,
                 big: true,
                 dialTitle: 'Closing time',
-                onChanged: (h) => setState(() => _close = h),
+                // The dial reports minutes; with the default 60-minute step
+                // that is always a whole hour, and `open_hour`/`close_hour`
+                // are what the wire carries.
+                onChanged: (m) => setState(() => _close = m ~/ 60),
               ),
             ),
           ],

@@ -117,11 +117,20 @@ class _DaypartSheetState extends State<_DaypartSheet> {
   late String _moodId = widget.existing?.moodId ?? moods.first.id;
 
   // `open_questions.md` #18 flagged that no time picker was designed and the
-  // field was free text. It reuses the S05-12 hour dial the open-hours flow
-  // already uses, so no new visual language is introduced — and the backend
-  // gets real times, without which it cannot compute what plays when.
-  late int _start = widget.existing?.startHour ?? 18;
-  late int _end = widget.existing?.endHour ?? 21;
+  // field was free text. It reuses the S05-12 dial the open-hours flow already
+  // uses, so no new visual language is introduced — and the backend gets real
+  // times, without which it cannot compute what plays when.
+  //
+  // Minutes past midnight, and the dial is opened at [_minuteStep]. A daypart
+  // boundary is a business decision — a kitchen that turns over at 6:30, a bar
+  // that lifts at 9:45 — and rounding it to the hour was a limit of the write
+  // path, never of the column: `dayparts.start_local` is a Postgres `time`.
+  late int _start = widget.existing?.startMinutesOfDay ?? 18 * 60;
+  late int _end = widget.existing?.endMinutesOfDay ?? 21 * 60;
+
+  /// Five minutes. Fine enough that nobody reaches for a keyboard, coarse
+  /// enough that the wheel is twelve flickable items rather than sixty.
+  static const _minuteStep = 5;
 
   /// Defaults to "Every week". The recurring plan is the normal case, and the
   /// destructive-ish option should be the one you pick on purpose.
@@ -133,7 +142,7 @@ class _DaypartSheetState extends State<_DaypartSheet> {
   /// popped by the time the write runs, so a server rejection would have no
   /// dialog to report into.
   String? get _rangeError {
-    if (_end == _start) return 'Start and end cannot be the same hour.';
+    if (_end == _start) return 'Start and end cannot be the same time.';
     if (_end < _start) return 'End time must be after the start time.';
     return null;
   }
@@ -150,15 +159,18 @@ class _DaypartSheetState extends State<_DaypartSheet> {
       // There was no cross-field check here and the server validated each hour
       // only as 0–23, so "Starts 9pm / Ends 7am" saved cleanly, as did a
       // zero-length 6pm–6pm. These decide what actually plays in the room, and
-      // neither shape has a meaning the scheduler can act on.
+      // neither shape has a meaning the scheduler can act on. Both ends are
+      // compared as minutes, so 6:00–6:30 is allowed and 6:30–6:00 is not.
       onPrimary: _rangeError != null
           ? null
           : () => Navigator.of(context).pop(_Save(
                 Daypart(
                   id: widget.existing?.id ?? '',
                   dayIndex: _day,
-                  startHour: _start,
-                  endHour: _end,
+                  startHour: _start ~/ 60,
+                  endHour: _end ~/ 60,
+                  startMinute: _start % 60,
+                  endMinute: _end % 60,
                   moodId: _moodId,
                 ),
                 justThisWeek: _justThisWeek,
@@ -203,18 +215,20 @@ class _DaypartSheetState extends State<_DaypartSheet> {
             Expanded(
               child: TimeField(
                 label: 'Starts',
-                hour: _start,
+                minutes: _start,
+                minuteStep: _minuteStep,
                 dialTitle: 'Start time',
-                onChanged: (h) => setState(() => _start = h),
+                onChanged: (m) => setState(() => _start = m),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: TimeField(
                 label: 'Ends',
-                hour: _end,
+                minutes: _end,
+                minuteStep: _minuteStep,
                 dialTitle: 'End time',
-                onChanged: (h) => setState(() => _end = h),
+                onChanged: (m) => setState(() => _end = m),
               ),
             ),
           ],

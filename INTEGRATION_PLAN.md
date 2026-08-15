@@ -16,7 +16,7 @@
 | §5.1 Reset security | Fixed. `verifyResetCode` returns a single-use token; `saveNewPassword` requires it. Contract and Dart interface both changed. |
 | §4.1 Zone scoping | Client-held `currentZoneIdProvider`, seeded from a `context` object the server returns at sign-in. No repository signature or widget test changed. |
 | §5.3 "At close" | Its own `takeover_alert_at_close` boolean, not a sentinel minute value. |
-| §5.2 Daypart times | Real time picker, reusing the existing hour dial. `start_local`/`end_local` are the source of truth; `range_label` is derived server-side. |
+| §5.2 Daypart times | Real time picker, reusing the existing S05-12 dial with a 5-minute wheel added (`minuteStep`; open hours keep the hour-only default, their wire fields being `open_hour`/`close_hour` smallints). `start_local`/`end_local` are the source of truth; `range_label` is derived server-side. |
 | §5.5 Error states | Minimal inline surface built from existing palette tokens — `ErrorNote` for forms, a snackbar for mutations. Marked as a placeholder for the designer. |
 
 Everything below is the analysis as written before implementation, kept

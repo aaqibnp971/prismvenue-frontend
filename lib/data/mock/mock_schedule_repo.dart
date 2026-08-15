@@ -133,6 +133,8 @@ class MockScheduleRepo implements ScheduleRepo {
           dayIndex: d.dayIndex,
           startHour: d.startHour,
           endHour: d.endHour,
+          startMinute: d.startMinute,
+          endMinute: d.endMinute,
           moodId: d.moodId,
           weekStart: weekStart,
         ),
@@ -157,6 +159,8 @@ class MockScheduleRepo implements ScheduleRepo {
       dayIndex: daypart.dayIndex,
       startHour: daypart.startHour,
       endHour: daypart.endHour,
+      startMinute: daypart.startMinute,
+      endMinute: daypart.endMinute,
       moodId: daypart.moodId,
       weekStart: daypart.weekStart,
     ));

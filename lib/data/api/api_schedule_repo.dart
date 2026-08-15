@@ -150,6 +150,10 @@ class ApiScheduleRepo implements ScheduleRepo {
         dayIndex: json['day_index'] as int? ?? 0,
         startHour: json['start_hour'] as int? ?? 0,
         endHour: json['end_hour'] as int? ?? 0,
+        // Defaulted, not required: a server that predates minute precision
+        // sends neither, and whole hours are what it meant.
+        startMinute: json['start_minute'] as int? ?? 0,
+        endMinute: json['end_minute'] as int? ?? 0,
         moodId: json['mood_id'] as String? ?? 'daytime-flow',
         weekStart: json['week_start'] == null
             ? null
@@ -159,12 +163,14 @@ class ApiScheduleRepo implements ScheduleRepo {
         serverRangeLabel: json['range_label'] as String?,
       );
 
-  /// `range_label` is deliberately not sent — it is derived from the hours
+  /// `range_label` is deliberately not sent — it is derived from the times
   /// server-side, so sending it would invite the two to drift apart.
   static Map<String, dynamic> _daypartToJson(Daypart d) => {
         'day_index': d.dayIndex,
         'start_hour': d.startHour,
         'end_hour': d.endHour,
+        'start_minute': d.startMinute,
+        'end_minute': d.endMinute,
         'mood_id': d.moodId,
         // Which plan the row belongs to. Null is the recurring plan, which is
         // also what an older server ignores harmlessly.

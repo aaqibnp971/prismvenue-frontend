@@ -420,10 +420,20 @@ class WidgetGalleryScreen extends StatelessWidget {
           ),
         );
       }),
-      ('TimeDialSheet — 7:00 AM (interactive)', (context) {
+      ('TimeDialSheet — 7:00 AM, whole hours (interactive)', (context) {
         return ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
-          child: TimeDialSheet(title: 'Opening time', initialHour: 7),
+          child: TimeDialSheet(title: 'Opening time', initialMinutes: 7 * 60),
+        );
+      }),
+      ('TimeDialSheet — 6:30 PM, 5-minute wheel (interactive)', (context) {
+        return ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: TimeDialSheet(
+            title: 'Start time',
+            initialMinutes: 18 * 60 + 30,
+            minuteStep: 5,
+          ),
         );
       }),
       ('Icons — lucide picks + hand-ported chevrons/checks', (context) {

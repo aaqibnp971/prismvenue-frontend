@@ -154,6 +154,37 @@ void main() {
     expect(find.text('Add a daypart'), findsOneWidget); // sheet still open
   });
 
+  testWidgets('a daypart can start on a half hour, not just on the hour',
+      (tester) async {
+    // `dayparts.start_local` was always a Postgres `time` and the rail always
+    // formatted `h:mm`; the write path was the hour-only half. A venue whose
+    // kitchen turns over at 6:30 could not say so.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    await tester.tap(find.text('+ Add'));
+    await _settle(tester);
+    await tester.tap(find.text('6:00 pm')); // the Starts field
+    await _settle(tester);
+
+    // Six steps of five minutes on the wheel. Negative is later: the wheel is
+    // rotated a quarter turn, so dragging left advances it.
+    await tester.drag(
+        find.byType(ListWheelScrollView), const Offset(-76.0 * 6, 0));
+    await _settle(tester);
+
+    expect(find.text('Set 6:30 PM'), findsOneWidget);
+    await tester.tap(find.text('Set 6:30 PM'));
+    await _settle(tester);
+
+    // The field shows the minutes rather than rounding them away.
+    expect(find.text('6:30 pm'), findsOneWidget);
+
+    await tester.tap(find.text('Add daypart'));
+    await _settle(tester);
+    expect(find.text('6:30 – 9 pm'), findsOneWidget);
+  });
+
   testWidgets('S03-3 week picker: choosing a date moves the range header',
       (tester) async {
     await pumpSchedule(tester);

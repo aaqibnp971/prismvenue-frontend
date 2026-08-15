@@ -31,10 +31,15 @@ NEW items encountered during the build. Finalized in Phase 5.
     (resize) interaction rather than a move, which is the operation a
     contiguous plan really wants.
 
-34. **Snap granularity is one hour because that is all the model can say.**
-    `startHour`/`endHour` are ints and the wire sends ints; finer snapping needs
-    the `start_local`/`end_local` columns. It also matches the hour dial the
-    sheet uses, so a drag can never produce a time the sheet cannot then edit.
+34. **Drag snaps to the hour; the sheet reaches five minutes.** ~~because that
+    is all the model can say~~ — resolved on the model side: `Daypart` carries
+    `startMinute`/`endMinute`, the wire sends them, and the dial's minute wheel
+    picks them. The *drag* still steps in whole hours and carries the minutes
+    along untouched (7:30–11:30 dragged one column right is 8:30–11:30), because
+    a finger crossing a week-wide grid cannot express five minutes — a step
+    would be a few pixels. The sheet is the precise path, and it can edit
+    anything a drag produces. Whether the grid should also offer a fine-snap
+    modifier is still open.
 
 35. **First use of Semantics and haptics in the codebase.** Neither appeared
     anywhere in `lib/` before this. Drag-and-drop is invisible to VoiceOver by
