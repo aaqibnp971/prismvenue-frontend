@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prism_venues/app/router.dart';
 import 'package:prism_venues/data/mock/mock_playback_repo.dart';
+import 'package:prism_venues/data/models/guardrails.dart';
 import 'package:prism_venues/data/repositories/playback_repo.dart';
+import 'package:prism_venues/data/repositories/settings_repo.dart';
 import 'package:prism_venues/main.dart';
 import 'package:prism_venues/shared/widgets/confirm_dialog.dart';
 
@@ -80,6 +82,46 @@ void main() {
     await tester.tap(find.byType(GestureDetector).first); // top-bar back
     await _settle(tester);
     expect(find.text('26–70%'), findsOneWidget);
+  });
+
+  testWidgets('S05-2 reset puts the band back to the shipped default',
+      (tester) async {
+    // The two sliders clamp against each other, so a manager who has dragged
+    // the band to 0–100 while experimenting cannot easily get back to the
+    // numbers it shipped with.
+    await pumpApp(tester, email: 'priya@marinacafe.com');
+    await toSettings(tester);
+    await tester.tap(find.text('Volume policy'));
+    await _settle(tester);
+
+    // Inert while the band is already at the default — a control that does
+    // nothing is worse than one that is visibly unavailable (§6-A3).
+    expect(find.text('Reset to 26–70%'), findsOneWidget);
+    expect(
+        tester
+            .widget<Opacity>(find.ancestor(
+                of: find.text('Reset to 26–70%'),
+                matching: find.byType(Opacity)))
+            .opacity,
+        0.4);
+
+    container
+        .read(settingsRepoProvider)
+        .updateGuardrails(const Guardrails(volumeMin: 0, volumeMax: 100));
+    await _settle(tester);
+    expect(find.text('0%'), findsOneWidget);
+    expect(find.text('100%'), findsOneWidget);
+
+    await tester.tap(find.text('Reset to 26–70%'));
+    await _settle(tester);
+
+    // Both ends in one write. Two sequential updates would each clamp against
+    // the other's old value, so 0–100 would land on 26–100 and only reach
+    // 26–70 by luck of ordering.
+    expect(find.text('26%'), findsOneWidget);
+    expect(find.text('70%'), findsOneWidget);
+    expect(find.text('0%'), findsNothing);
+    expect(find.text('100%'), findsNothing);
   });
 
   testWidgets('S05-3 transitions: selecting updates the home row value',
