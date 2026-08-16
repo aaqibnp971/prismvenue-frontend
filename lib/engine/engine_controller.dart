@@ -227,9 +227,11 @@ class EngineController {
       return;
     }
 
-    await _engine.silence();
-    // Prism has stopped driving, so it can vouch for no room being reachable.
-    _ref.read(playedZonesProvider.notifier).clear();
+    // Through _syncAudible rather than silencing here. Silencing directly was
+    // fine while stopping meant one call; it stopped being fine the moment
+    // there was also focus to hand back, and the sign-out path was the one
+    // place that would have quietly kept holding it.
+    await _syncAudible();
     // The ceiling is deliberately NOT cleared. The engine is silent, so it
     // changes nothing now, and holding the last real number is a better guess
     // for the gap before the next account's guardrails land than resetting to
@@ -314,11 +316,36 @@ class EngineController {
   /// Both engine calls are idempotent, so being called on a change that turns
   /// out not to move the outcome costs nothing.
   Future<void> _syncAudible() async {
-    if (!_audible) {
+    // Prism is not driving, so it can vouch for no room being reachable.
+    // See app/local_playback.dart.
+    Future<void> quiet() async {
       await _engine.silence();
-      // Prism is not driving, so it can vouch for no room being reachable.
-      // See app/local_playback.dart.
       _ref.read(playedZonesProvider.notifier).clear();
+    }
+
+    if (!_wanted) {
+      await quiet();
+      // Hand the speakers back when the room is not meant to be playing at
+      // all. Focus outlives whatever took it, so holding it while silent keeps
+      // every other app on the device ducked for no reason.
+      await abandonAudioFocus();
+      return;
+    }
+
+    if (_externalAudio) {
+      // Something else has them. Keep the focus request open rather than
+      // abandoning: on Android a transient loss is followed by a gain, and
+      // giving the request up is precisely what stops that arriving.
+      await quiet();
+      return;
+    }
+
+    // Asked, not assumed. Android grants or refuses; every other platform
+    // answers true because it has no such concept, so this cannot leave a room
+    // silent on Windows. A refusal means somebody else is mid-call — staying
+    // quiet is the correct outcome, not a failure to report.
+    if (!await requestAudioFocus()) {
+      await quiet();
       return;
     }
 
@@ -335,8 +362,13 @@ class EngineController {
     }
   }
 
-  bool get _audible =>
-      _signedIn && !_paused && !_takeoverActive && !_externalAudio;
+  /// Whether the room is *meant* to be playing.
+  ///
+  /// Separate from whether it can be. The first three reasons are ours to
+  /// decide; external audio and a refused focus request are the platform's
+  /// answer to "may I", and asking that question requires having decided the
+  /// first part already.
+  bool get _wanted => _signedIn && !_paused && !_takeoverActive;
 
   void dispose() {
     for (final s in _subscriptions) {

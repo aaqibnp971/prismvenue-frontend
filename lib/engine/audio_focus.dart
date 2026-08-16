@@ -23,6 +23,41 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// fail because it cannot ask about speakers it does not have.
 const MethodChannel audioFocusChannel = MethodChannel('prism/audio_focus');
 
+/// Asks the platform for the speakers, and reports whether it agreed.
+///
+/// Only Android has anything to say here. Its whole model is a request: the
+/// system grants or refuses, and only then does it call back on loss and gain.
+/// An app that never asks is one the rest of the system cannot duck, and one
+/// that will never be told a call has started.
+///
+/// **True is the answer everywhere else**, and that is deliberate rather than
+/// lazy. Windows has no such concept — the watcher there volunteers the
+/// information without being asked — and a platform that cannot answer must not
+/// be able to keep a venue silent. `MissingPluginException` is the normal case
+/// on Windows, web and in tests, not an error.
+Future<bool> requestAudioFocus() async {
+  try {
+    return await audioFocusChannel.invokeMethod<bool>('requestFocus') ?? true;
+  } on MissingPluginException {
+    return true;
+  } catch (_) {
+    return true;
+  }
+}
+
+/// Hands the speakers back. Idempotent, and a no-op off Android.
+///
+/// Worth calling rather than leaving implicit: focus outlives the thing that
+/// took it, so a room that has stopped playing while still holding focus is a
+/// room that keeps every other app on the device ducked for no reason.
+Future<void> abandonAudioFocus() async {
+  try {
+    await audioFocusChannel.invokeMethod<void>('abandonFocus');
+  } on MissingPluginException {
+    // Nothing to hand back.
+  } catch (_) {}
+}
+
 /// True while another program is making an audible sound through the same
 /// output device.
 ///

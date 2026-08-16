@@ -51,6 +51,30 @@ void main() {
     return container;
   }
 
+  /// Calls the app makes OUT to the platform, and a scripted answer to
+  /// `requestFocus`.
+  ///
+  /// Android is the only platform that answers: its model is a request the
+  /// system may refuse. Windows volunteers the information instead and
+  /// implements neither method, which is why the default here is "no handler
+  /// installed" rather than "granted".
+  late List<String> platformCalls;
+  bool? focusGranted;
+
+  void installPlatformHandler() {
+    platformCalls = [];
+    focusGranted = null;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(audioFocusChannel, (call) async {
+      platformCalls.add(call.method);
+      if (call.method == 'requestFocus') return focusGranted ?? true;
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(audioFocusChannel, null));
+  }
+
   /// What the Windows runner sends when another program starts or stops making
   /// a sound. Delivered through the real channel so the handler wiring is
   /// exercised, not just the controller's reaction to it.
@@ -65,11 +89,18 @@ void main() {
     );
   }
 
-  /// The controller chains its engine work through futures and the providers
-  /// are streams, so a few microtask turns are what "settle" means here.
+  /// The controller chains its engine work through futures, the providers are
+  /// streams, and asking for audio focus is a platform-channel round trip — so
+  /// "settled" is several event-loop turns, not a couple of microtasks.
+  ///
+  /// A fixed count of `Duration.zero` turns was enough until the focus call
+  /// added a hop, after which the first test in this file failed roughly one
+  /// run in three — but only inside the full suite, where the machine is busy
+  /// enough for the timing to matter. Real millisecond waits make the margin
+  /// wide enough that load cannot decide the outcome.
   Future<void> settle() async {
-    for (var i = 0; i < 12; i++) {
-      await Future<void>.delayed(Duration.zero);
+    for (var i = 0; i < 10; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 2));
     }
   }
 
@@ -191,6 +222,74 @@ void main() {
     await externalAudio(false);
     await settle();
     expect(engine.silenced, isTrue);
+  });
+
+  test('the room asks for the speakers before it plays', () async {
+    // Android grants or refuses; an app that never asks is one the system
+    // cannot duck, and one that is never told a call has started.
+    installPlatformHandler();
+    final container = build();
+    await container.read(authControllerProvider).signIn('owner@x.com', 'pw');
+    await settle();
+
+    expect(platformCalls, contains('requestFocus'));
+    expect(engine.silenced, isFalse);
+  });
+
+  test('a refused request leaves the room quiet', () async {
+    // Somebody is mid-call. Staying silent is the correct outcome, not a
+    // failure to report.
+    installPlatformHandler();
+    focusGranted = false;
+    final container = build();
+    await container.read(authControllerProvider).signIn('owner@x.com', 'pw');
+    await settle();
+
+    expect(platformCalls, contains('requestFocus'));
+    expect(engine.silenced, isTrue);
+  });
+
+  test('the speakers are handed back when the room stops for good', () async {
+    // Focus outlives whatever took it, so holding it while silent keeps every
+    // other app on the device ducked for no reason.
+    installPlatformHandler();
+    final container = build();
+    await container.read(authControllerProvider).signIn('owner@x.com', 'pw');
+    await settle();
+    platformCalls.clear();
+
+    await container.read(authControllerProvider).signOut();
+    await settle();
+    expect(platformCalls, contains('abandonFocus'));
+  });
+
+  test('a transient loss keeps the request open', () async {
+    // On Android a transient loss is followed by a gain — abandoning the
+    // request is precisely what stops that arriving, so the room would never
+    // come back after a phone call.
+    installPlatformHandler();
+    final container = build();
+    await container.read(authControllerProvider).signIn('owner@x.com', 'pw');
+    await settle();
+    platformCalls.clear();
+
+    await externalAudio(true);
+    await settle();
+
+    expect(engine.silenced, isTrue);
+    expect(platformCalls, isNot(contains('abandonFocus')),
+        reason: 'giving the request up is what stops AUDIOFOCUS_GAIN arriving');
+  });
+
+  test('a platform with no focus concept never goes silent', () async {
+    // No mock handler installed, so every call throws MissingPluginException —
+    // the normal case on Windows, on the web and in most of this suite. A
+    // platform that cannot answer must not be able to keep a venue quiet.
+    final container = build();
+    await container.read(authControllerProvider).signIn('owner@x.com', 'pw');
+    await settle();
+
+    expect(engine.silenced, isFalse);
   });
 }
 
