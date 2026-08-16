@@ -112,6 +112,7 @@ class MockVenueRepo implements VenueRepo {
     required String name,
     required String address,
     required List<String> zoneNames,
+    String? timezone,
     DeviceOffsets? deviceOffsets,
   }) async {
     final id = 'venue-${_nextId++}';
@@ -122,7 +123,7 @@ class MockVenueRepo implements VenueRepo {
       // Whatever this device is on. The real server resolves the same reading
       // against the tz database; the mock cannot, so it shows the offset it
       // was handed rather than inventing a place name.
-      timezone: deviceOffsets == null ? null : 'Device offset',
+      timezone: timezone ?? (deviceOffsets == null ? null : 'Device offset'),
       zones: [
         for (final (i, zoneName) in zoneNames.indexed)
           Zone(

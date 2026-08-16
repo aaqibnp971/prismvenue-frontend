@@ -22,9 +22,19 @@ class ScheduleRail extends StatelessWidget {
     this.selfDrive = false,
     this.offSchedule = false,
     this.horizontal = false,
+    this.venueTime,
   });
 
   final List<ScheduleEntry> entries;
+
+  /// The venue's own wall clock, "HH:MM", shown under the header.
+  ///
+  /// Every time on this rail is in the VENUE's zone, not the reader's, and
+  /// nothing said so. A manager in India reading a Gulf venue saw "8:00 · NOW"
+  /// at what their own watch called 9:30 and concluded the schedule was broken
+  /// — it was not, they were reading two clocks as though they were one.
+  final String? venueTime;
+
   final int nowIndex;
 
   /// First entry still to come, or -1 when the day is done. Drives "up next"
@@ -83,6 +93,12 @@ class ScheduleRail extends StatelessWidget {
                     tone: offSchedule ? PillTone.amber : PillTone.accent),
               ],
             ),
+            if (venueTime != null) ...[
+              const SizedBox(height: 3),
+              Text('Venue time $venueTime',
+                  style: PrismType.microHelper
+                      .copyWith(color: palette.textTertiary)),
+            ],
             const SizedBox(height: 10),
             if (selfDrive)
               _selfDriveNote(palette)

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../api/api_exception.dart';
 import '../models/schedule_entry.dart';
+import '../models/timezone.dart';
 import '../repositories/schedule_repo.dart';
 
 /// Marina Café schedule seeds. The rail's 5 rows come from the README
@@ -101,6 +102,11 @@ class MockScheduleRepo implements ScheduleRepo {
         // looks like, and a mock that said -1 here would render the whole day
         // as over instead.
         nextIndex: emptyToday ? -1 : 3,
+        // The mock has no venue timezone to read, so it reports this device's
+        // clock — which is the truth for a mock, and keeps the rail's header
+        // rendering the same shape it does against the API.
+        timezone: null,
+        venueTime: DeviceOffsets.currentClock(),
         selfDrive: _z.mode == ScheduleMode.selfDrive,
         entries: emptyToday ? const [] : _todayEntries,
       );

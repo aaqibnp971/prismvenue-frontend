@@ -137,6 +137,8 @@ class TodaySchedule {
     required this.auto,
     this.nextIndex = -1,
     this.selfDrive = false,
+    this.timezone,
+    this.venueTime,
   });
 
   final List<ScheduleEntry> entries;
@@ -167,6 +169,17 @@ class TodaySchedule {
 
   /// Rail header chip ("Auto") — Prism driving on schedule.
   final bool auto;
+
+  /// The venue's IANA zone, and its wall clock as "HH:MM" when the server read
+  /// it. Both null until the fetch lands, and left null rather than filled with
+  /// the device's own clock — showing the wrong one confidently is the whole
+  /// bug this exists to prevent.
+  ///
+  /// Carried on the rail rather than on the venue row because this response
+  /// already refreshes every 30s, and a clock is the one value where being
+  /// minutes stale defeats the point of showing it.
+  final String? timezone;
+  final String? venueTime;
 
   /// True when Prism picks the vibe itself (S03-1) and the saved plan is not
   /// running. [entries] then describes a plan that is not in charge, so the

@@ -180,6 +180,31 @@ void main() {
       expect(byName['Older server']!.timezone, isNull);
     });
 
+    test('a venue is created with the time zone the form chose', () async {
+      // Asked at creation because it is the single field that decides when
+      // every daypart fires, and it is invisible afterwards unless somebody
+      // goes looking. Left unasked it took the column default — which is how
+      // nine venues ended up on one arbitrary zone.
+      routes['/venues'] = <Object>[];
+      await ApiVenueRepo(buildClient(), scope()).addVenue(
+        name: 'Harbor House',
+        address: '3 Quayside Lane',
+        zoneNames: const ['Dining room'],
+        timezone: 'Asia/Kolkata',
+        deviceOffsets:
+            const DeviceOffsets(januaryMinutes: 330, julyMinutes: 330),
+      );
+
+      final body = jsonDecode(
+        sent.firstWhere((r) => r.method == 'POST').body,
+      ) as Map<String, dynamic>;
+      // Both sent: the explicit name wins server-side, and the offsets remain
+      // the fallback for a client whose zone list did not load.
+      expect(body['timezone'], 'Asia/Kolkata');
+      expect(body['device_offsets'],
+          {'january_minutes': 330, 'july_minutes': 330});
+    });
+
     test('setTimezone patches the venue', () async {
       routes['/venues'] = <Object>[];
       await ApiVenueRepo(buildClient(), scope())
@@ -375,6 +400,40 @@ void main() {
         expect(sent.length, after,
             reason: 'no requests once nobody is listening');
       });
+    });
+
+    test('the rail carries the venue clock, and never the reader own', () async {
+      // Every time on the rail is in the VENUE's zone. A manager in India
+      // reading a Gulf venue saw "8:00 · NOW" at what their own watch called
+      // 9:30 and concluded the schedule was broken. It is server-read for the
+      // same reason it is shown at all: the device's clock is the wrong one.
+      routes['/today'] = {
+        'entries': <Object>[],
+        'now_index': -1,
+        'next_index': -1,
+        'timezone': 'Asia/Kolkata',
+        'venue_time': '10:55',
+        'auto': true,
+      };
+
+      final today =
+          await ApiScheduleRepo(buildClient(), scope()).watchToday().first;
+
+      expect(today.timezone, 'Asia/Kolkata');
+      expect(today.venueTime, '10:55');
+    });
+
+    test('an older server leaves the clock blank rather than guessing',
+        () async {
+      routes['/today'] = {'entries': <Object>[], 'now_index': 0, 'auto': true};
+
+      final today =
+          await ApiScheduleRepo(buildClient(), scope()).watchToday().first;
+
+      // Not the device's clock. Showing the wrong one confidently is the whole
+      // bug this exists to prevent.
+      expect(today.venueTime, isNull);
+      expect(today.timezone, isNull);
     });
 
     test('sends hours and never sends the label', () async {

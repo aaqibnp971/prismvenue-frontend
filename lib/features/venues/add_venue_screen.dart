@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../app/session.dart';
 import '../../data/models/timezone.dart';
 import '../../data/repositories/venue_repo.dart';
 import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/primary_button.dart';
+import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/prism_field.dart';
 import '../../shared/widgets/prism_icons.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
+import '../settings/timezone_sheet.dart';
 import 'add_zone_sheet.dart';
 
 /// S04-3 "Add a venue — owner onboards a new location into the estate".
@@ -29,6 +32,45 @@ class _AddVenueScreenState extends ConsumerState<AddVenueScreen> {
   final _street = TextEditingController();
   final _city = TextEditingController();
   final _zones = <String>[];
+
+  /// The clock this venue's schedule will run on.
+  ///
+  /// Asked at creation rather than only inferred, because it is the single
+  /// field that decides when every daypart fires and it is invisible
+  /// afterwards unless somebody goes looking. Left unset it took the column
+  /// default, which is how nine venues ended up on one arbitrary zone and every
+  /// schedule fired at the wrong hour.
+  ///
+  /// Pre-filled from THIS device — a venue is usually set up from somewhere
+  /// near it — so the common case is confirm-and-move-on rather than a search.
+  /// Null only while the list is loading, or if it failed to load; the create
+  /// call then falls back to sending the device's raw offsets, which the server
+  /// resolves the same way.
+  String? _timezone;
+  List<TimezoneOption> _timezoneOptions = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTimezones();
+  }
+
+  Future<void> _loadTimezones() async {
+    try {
+      final options = await ref.read(venueRepoProvider).listTimezones();
+      if (!mounted) return;
+      final offset = DeviceOffsets.currentMinutes();
+      final match = options.where((o) => o.utcOffsetMinutes == offset);
+      setState(() {
+        _timezoneOptions = options;
+        _timezone = match.isEmpty ? null : match.first.name;
+      });
+    } catch (_) {
+      // Silent: the field shows "Use this device's clock" and the create call
+      // sends offsets instead. A venue form must not fail because a reference
+      // list did not load.
+    }
+  }
 
   @override
   void dispose() {
@@ -73,6 +115,7 @@ class _AddVenueScreenState extends ConsumerState<AddVenueScreen> {
                 .where((s) => s.isNotEmpty)
                 .join(', '),
             zoneNames: _zones,
+            timezone: _timezone,
             // This machine's own clock, which is the closest thing to a right
             // answer available at creation time — a venue is usually set up
             // from somewhere near it. Without it the column default stands,
@@ -92,6 +135,12 @@ class _AddVenueScreenState extends ConsumerState<AddVenueScreen> {
       return;
     }
     if (mounted) context.go('/venues');
+  }
+
+  Future<void> _pickTimezone() async {
+    final picked = await showTimezoneSheet(context,
+        options: _timezoneOptions, selected: _timezone);
+    if (picked != null && mounted) setState(() => _timezone = picked);
   }
 
   @override
@@ -138,6 +187,50 @@ class _AddVenueScreenState extends ConsumerState<AddVenueScreen> {
                                 child: PrismField(
                                     hint: 'City', controller: _city)),
                           ],
+                        ),
+                        const SizedBox(height: 14),
+                        Text('Time zone',
+                            style: PrismType.label
+                                .copyWith(color: palette.textSecondary)),
+                        const SizedBox(height: 7),
+                        Pressable(
+                          onTap: _timezoneOptions.isEmpty ? null : _pickTimezone,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 13, horizontal: 15),
+                            decoration: BoxDecoration(
+                              color: palette.surface,
+                              border: Border.all(color: palette.border),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(LucideIcons.globe,
+                                    size: 15, color: palette.accent),
+                                const SizedBox(width: 9),
+                                Expanded(
+                                  child: Text(
+                                    _timezone ?? "This device's clock",
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: PrismType.bodySm.copyWith(
+                                        fontSize: 13,
+                                        color: palette.textPrimary),
+                                  ),
+                                ),
+                                Text('Change',
+                                    style: PrismType.microHelper
+                                        .copyWith(color: palette.accentText)),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Every daypart you plan runs on this clock. It is '
+                          'the venue’s, not yours.',
+                          style: PrismType.microHelper
+                              .copyWith(color: palette.textSecondary),
                         ),
                         const SizedBox(height: 14),
                         // Open hours row (S05-6 pattern); editing lands with

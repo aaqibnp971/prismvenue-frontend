@@ -144,6 +144,8 @@ class ApiScheduleRepo implements ScheduleRepo {
       // Defaulted to "the day is done" rather than 0: a server that does not
       // send it must not make the first row claim to be next.
       nextIndex: json['next_index'] as int? ?? -1,
+      timezone: json['timezone'] as String?,
+      venueTime: json['venue_time'] as String?,
       auto: json['auto'] as bool? ?? true,
       // Absent from an older server: assume a plan IS running, so the rail
       // keeps its documented behaviour rather than hiding the schedule.

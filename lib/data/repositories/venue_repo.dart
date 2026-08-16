@@ -25,6 +25,10 @@ abstract class VenueRepo {
     required String name,
     required String address,
     required List<String> zoneNames,
+    /// The clock the venue's schedule runs on, chosen on the S04-3 form. Wins
+    /// over [deviceOffsets], which stays as the fallback for when the zone list
+    /// could not be loaded.
+    String? timezone,
     DeviceOffsets? deviceOffsets,
   });
 

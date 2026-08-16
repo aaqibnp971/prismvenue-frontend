@@ -227,6 +227,7 @@ class FloorScreen extends ConsumerWidget {
                             entries: today.entries,
                             nowIndex: today.nowIndex,
                             nextIndex: today.nextIndex,
+                            venueTime: today.venueTime,
                             selfDrive: today.selfDrive,
                             offSchedule:
                                 playback.value?.offSchedule ?? false,
@@ -254,6 +255,7 @@ class FloorScreen extends ConsumerWidget {
                             entries: today.entries,
                             nowIndex: today.nowIndex,
                             nextIndex: today.nextIndex,
+                            venueTime: today.venueTime,
                             selfDrive: today.selfDrive,
                             offSchedule:
                                 playback.value?.offSchedule ?? false,

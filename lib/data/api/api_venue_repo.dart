@@ -70,12 +70,16 @@ class ApiVenueRepo implements VenueRepo {
     required String name,
     required String address,
     required List<String> zoneNames,
+    String? timezone,
     DeviceOffsets? deviceOffsets,
   }) async {
     await _client.post('/venues', body: {
       'name': name,
       'address': address,
       'zone_names': zoneNames,
+      // Omitted rather than null when unset, so the server's "resolve the
+      // device's offsets instead" branch is the one that runs.
+      'timezone': ?timezone,
       // Omitted rather than null-filled when absent, so the server's "no
       // reading, leave the column default" branch is the one that runs.
       if (deviceOffsets != null) 'device_offsets': deviceOffsets.toJson(),
