@@ -8,6 +8,7 @@ import 'package:prism_venues/data/mock/mock_schedule_repo.dart';
 import 'package:prism_venues/data/models/schedule_entry.dart';
 import 'package:prism_venues/data/repositories/playback_repo.dart';
 import 'package:prism_venues/main.dart';
+import 'package:prism_venues/shared/widgets/seg_toggle.dart';
 import 'package:prism_venues/features/schedule/week_grid.dart';
 import 'package:prism_venues/shared/widgets/confirm_dialog.dart';
 import 'package:prism_venues/shared/widgets/prism_bottom_sheet.dart';
@@ -46,7 +47,7 @@ void main() {
     await _settle(tester);
   }
 
-  testWidgets('S03-1 ⇄ S03-2: self-drive default, switch to custom and back',
+  testWidgets('S03-1 → S03-2: self-drive default, switch to custom',
       (tester) async {
     await pumpSchedule(tester);
 
@@ -58,10 +59,29 @@ void main() {
     // Every day carries the 5 seeded dayparts.
     expect(find.text('Morning calm'), findsNWidgets(7));
     expect(find.textContaining('Mon '), findsOneWidget);
+  });
 
+  testWidgets('self-drive is locked, and the way back out of it is not',
+      (tester) async {
+    // Choosing self-drive does real harm rather than nothing: it means "the
+    // saved plan is deliberately not running", migration 010's job skips those
+    // zones, and no venues PCE profile exists to pick anything instead — so
+    // the room quietly stops following its schedule and holds one mood.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    // Dimmed to §6-A3's 40%, the same treatment a gated nav tab gets.
+    final dimmed = tester.widgetList<Opacity>(find.descendant(
+        of: find.byType(SegToggle),
+        matching: find.byType(Opacity)));
+    expect(dimmed.map((o) => o.opacity), contains(0.4));
+
+    // Inert: a lock beside a label the reader can see is its own explanation.
     await tester.tap(find.text('Self-drive'));
     await _settle(tester);
-    expect(find.text('Prism is self-driving'), findsOneWidget);
+    expect(find.text('Prism is self-driving'), findsNothing,
+        reason: 'the locked option must not be selectable');
+    expect(find.text('+ Add'), findsOneWidget);
   });
 
   testWidgets('S03-5 edit: delete removes the daypart', (tester) async {

@@ -73,6 +73,24 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                   SegToggle(
                     options: const ['Self-drive', 'Custom plan'],
                     selected: mode == ScheduleMode.selfDrive ? 0 : 1,
+                    // Self-drive is locked because it does not work yet, and
+                    // choosing it does real harm rather than nothing.
+                    //
+                    // `self_drive = TRUE` means "Prism picks the vibe itself,
+                    // so the saved plan is deliberately not running", and
+                    // migration 010's per-minute job skips those zones. But
+                    // there is no venues PCE profile — `pce/` understands app
+                    // switches, idle time and task deadlines, none of which a
+                    // room emits — so nothing picks anything. The effect is a
+                    // venue that quietly stops following its schedule and
+                    // holds one mood indefinitely, under a screen promising
+                    // Prism is reading the room.
+                    //
+                    // Locked, not hidden: it is half the frame's story (S03-1)
+                    // and hiding it would make the Custom plan toggle look
+                    // like a control with one position. Index 0 only, so a
+                    // zone already on self-drive can still move off it.
+                    lockedOptions: const {0},
                     // Awaited and caught: switching self-drive ⇄ custom decides
                     // whether the saved plan runs at all, so a failure that
                     // leaves the toggle looking switched is worse here than

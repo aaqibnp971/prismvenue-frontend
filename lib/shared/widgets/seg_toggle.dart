@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
@@ -17,6 +18,7 @@ class SegToggle extends StatelessWidget {
     this.pill = false,
     this.itemPadding,
     this.fontSize,
+    this.lockedOptions = const {},
   });
 
   final List<String> options;
@@ -34,6 +36,18 @@ class SegToggle extends StatelessWidget {
   /// §3 range 11–12; pill defaults 11, boxed 11.5 (S02-1).
   final double? fontSize;
 
+  /// Indices that cannot be chosen: dimmed to §6-A3's 40%, prefixed with a
+  /// lock, and inert to a tap.
+  ///
+  /// Same treatment `PrismShell` gives a gated tab (§6-A5), and inert for the
+  /// same reason: a lock beside a label the reader can already see is its own
+  /// explanation, and a dialog saying "this is not available" says nothing the
+  /// icon has not.
+  ///
+  /// A locked option can still be the SELECTED one — a zone already on it must
+  /// be able to see where it is, and to move off it.
+  final Set<int> lockedOptions;
+
   @override
   Widget build(BuildContext context) {
     final palette = Theme.of(context).extension<PrismPalette>()!;
@@ -45,21 +59,38 @@ class SegToggle extends StatelessWidget {
 
     Widget item(int i) {
       final on = i == selected;
+      final locked = lockedOptions.contains(i);
+      final ink = on ? palette.chipInk : palette.textSecondary;
       final child = GestureDetector(
-        onTap: onChanged == null ? null : () => onChanged!(i),
+        onTap: (onChanged == null || locked) ? null : () => onChanged!(i),
         behavior: HitTestBehavior.opaque,
-        child: Container(
-          padding: padding,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: on ? palette.accent : null,
-            borderRadius: BorderRadius.circular(pill ? 999 : 8),
-          ),
-          child: Text(
-            options[i],
-            style: PrismType.button.copyWith(
-              fontSize: size,
-              color: on ? palette.chipInk : palette.textSecondary,
+        child: Opacity(
+          opacity: locked ? 0.4 : 1,
+          child: Container(
+            padding: padding,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: on ? palette.accent : null,
+              borderRadius: BorderRadius.circular(pill ? 999 : 8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (locked) ...[
+                  Icon(LucideIcons.lock, size: size - 1.5, color: ink),
+                  const SizedBox(width: 5),
+                ],
+                Flexible(
+                  child: Text(
+                    options[i],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: PrismType.button
+                        .copyWith(fontSize: size, color: ink),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
