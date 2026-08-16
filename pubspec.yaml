@@ -16,7 +16,11 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.5+6
+# The `+N` is Android's versionCode, and Play refuses an upload that reuses
+# one — "Version code 6 has already been used". It has to rise on EVERY
+# upload, including a rebuild of otherwise identical code, because it is Play's
+# only ordering key. The `1.0.x` half is for humans and may repeat.
+version: 1.0.6+7
 
 environment:
   sdk: ^3.11.0
