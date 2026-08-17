@@ -96,10 +96,17 @@ bool OtherAppIsPlaying(DWORD own_pid) {
 
 }  // namespace
 
-AudioFocusWatcher::AudioFocusWatcher(flutter::FlutterEngine* engine)
+AudioFocusWatcher::AudioFocusWatcher(flutter::FlutterEngine* engine,
+                                     HWND window)
     : channel_(std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           engine->messenger(), "prism/audio_focus",
-          &flutter::StandardMethodCodec::GetInstance())) {}
+          &flutter::StandardMethodCodec::GetInstance())),
+      window_(window) {}
+
+void AudioFocusWatcher::Emit(bool playing) {
+  channel_->InvokeMethod("externalAudioChanged",
+                         std::make_unique<flutter::EncodableValue>(playing));
+}
 
 AudioFocusWatcher::~AudioFocusWatcher() { Stop(); }
 
@@ -132,9 +139,11 @@ void AudioFocusWatcher::Run() {
     if (first || playing != last_reported) {
       first = false;
       last_reported = playing;
-      channel_->InvokeMethod(
-          "externalAudioChanged",
-          std::make_unique<flutter::EncodableValue>(playing));
+      // Posted, not invoked. The channel may only be touched on the platform
+      // thread; see kFocusMessage. PostMessage rather than SendMessage so this
+      // loop never blocks on the UI, which would make quitting hang whenever a
+      // reading and a close raced.
+      PostMessage(window_, kFocusMessage, playing ? 1 : 0, 0);
     }
 
     // Sliced so quitting is responsive: joining on a full second of sleep makes

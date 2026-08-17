@@ -4,6 +4,8 @@
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 
+#include <windows.h>
+
 #include <atomic>
 #include <memory>
 #include <thread>
@@ -44,8 +46,20 @@ class FlutterEngine;
 // takeover both use it), so this is one more input to the same place.
 class AudioFocusWatcher {
  public:
+  /// Window message used to hop a reading onto the platform thread.
+  ///
+  /// **Flutter's method channels are not thread-safe.** They may only be
+  /// invoked on the platform thread, and this class does its looking on a
+  /// worker — so posting the answer through the window's own message queue is
+  /// what makes it legal. Calling InvokeMethod straight from the poll thread
+  /// appeared to work and dropped messages under load, which is the worst
+  /// shape a bug like this can take: the room paused, and then sometimes never
+  /// came back, because the message saying the speakers were free was the one
+  /// that went missing.
+  static constexpr UINT kFocusMessage = WM_APP + 0x51;
+
   // Sends `externalAudioChanged` with a bool on `prism/audio_focus`.
-  explicit AudioFocusWatcher(flutter::FlutterEngine* engine);
+  AudioFocusWatcher(flutter::FlutterEngine* engine, HWND window);
   ~AudioFocusWatcher();
 
   AudioFocusWatcher(const AudioFocusWatcher&) = delete;
@@ -54,8 +68,14 @@ class AudioFocusWatcher {
   void Start();
   void Stop();
 
+  /// Called from the window procedure, on the platform thread, with the value
+  /// the worker posted. The only place the channel is touched.
+  void Emit(bool playing);
+
  private:
   void Run();
+
+  HWND window_;
 
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
   std::thread thread_;

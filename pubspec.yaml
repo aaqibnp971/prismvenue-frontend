@@ -1,4 +1,4 @@
-name: prism_venues
+﻿name: prism_venues
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -17,10 +17,10 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
 # The `+N` is Android's versionCode, and Play refuses an upload that reuses
-# one — "Version code 6 has already been used". It has to rise on EVERY
+# one â€” "Version code 6 has already been used". It has to rise on EVERY
 # upload, including a rebuild of otherwise identical code, because it is Play's
 # only ordering key. The `1.0.x` half is for humans and may repeat.
-version: 1.0.6+7
+version: 1.0.7+8
 
 environment:
   sdk: ^3.11.0
@@ -47,18 +47,18 @@ dependencies:
   # The theme choice, remembered between launches. Deliberately NOT
   # flutter_secure_storage: that is the platform keychain, which is the wrong
   # home for a non-secret and which macOS refuses outright without a
-  # keychain-access-groups entitlement (see token_store.dart) — so the one
+  # keychain-access-groups entitlement (see token_store.dart) â€” so the one
   # place persistence had to work is the one place it would have failed.
   shared_preferences: ^2.3.0
 
   # The sound engine. A path dependency because prism-core is a separate repo
-  # that is versioned by its C ABI, not published to pub.dev — see
+  # that is versioned by its C ABI, not published to pub.dev â€” see
   # SOUND_ENGINE.md for the clone layout this expects.
   prism_core_bindings:
     path: ../prism-core/bindings/dart/prism_core_bindings
 
   # The engine loads scenes from a filesystem PATH; Flutter assets are not files
-  # on device, so bundled stems are copied here first. Native only — the web
+  # on device, so bundled stems are copied here first. Native only â€” the web
   # build never reaches this code (see lib/engine/prism_engine_stub.dart).
   path_provider: ^2.1.5
 
@@ -87,7 +87,7 @@ flutter:
 
   assets:
     - assets/img/
-    # Six mood scenes, ~13.7 MB as FLAC (lossless — verified bit-identical to
+    # Six mood scenes, ~13.7 MB as FLAC (lossless â€” verified bit-identical to
     # the WAV originals through the engine). Bundled rather than downloaded so a
     # venue keeps working with no network.
     - assets/audio/

@@ -29,8 +29,8 @@ bool FlutterWindow::OnCreate() {
 
   // Windows has no audio focus, so the app has to be told when another program
   // starts using the speakers. See audio_focus.h.
-  audio_focus_ =
-      std::make_unique<AudioFocusWatcher>(flutter_controller_->engine());
+  audio_focus_ = std::make_unique<AudioFocusWatcher>(
+      flutter_controller_->engine(), GetHandle());
   audio_focus_->Start();
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
@@ -80,6 +80,12 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;
+    // The audio watcher looks on a worker thread and posts here, because a
+    // Flutter method channel may only be invoked on the platform thread —
+    // which is this one.
+    case AudioFocusWatcher::kFocusMessage:
+      if (audio_focus_) audio_focus_->Emit(wparam != 0);
+      return 0;
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
