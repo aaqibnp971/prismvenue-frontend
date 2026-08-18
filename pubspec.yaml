@@ -20,7 +20,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # one â€” "Version code 6 has already been used". It has to rise on EVERY
 # upload, including a rebuild of otherwise identical code, because it is Play's
 # only ordering key. The `1.0.x` half is for humans and may repeat.
-version: 1.0.7+8
+version: 1.0.7+9
 
 environment:
   sdk: ^3.11.0
