@@ -71,6 +71,26 @@ try {
         if (Test-Path $src) { Copy-Item $src -Destination $Stage -Force }
     }
 
+    # --- The backend URL actually baked in ---------------------------------
+    #
+    # PRISM_API_BASE_URL is a --dart-define: it is compiled into the snapshot,
+    # not read at runtime. A bundle built with the wrong one looks completely
+    # healthy and simply cannot reach anything.
+    #
+    # That has shipped once. A diagnostic build pointing at a dummy host was
+    # staged with -SkipBuild, and the app reported "Can't reach Prism" on a
+    # machine with perfect connectivity. -SkipBuild cannot know what the
+    # existing output was compiled against, which is exactly when reading it
+    # back earns its place.
+    $snapshot = Join-Path $Stage "app\data\app.so"
+    if (-not (Test-Path $snapshot)) { throw "No Dart snapshot at $snapshot." }
+    $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($snapshot))
+    if ($text.Contains($ApiBaseUrl)) {
+        Write-Host "    + backend $ApiBaseUrl" -ForegroundColor DarkGray
+    } else {
+        throw "Staged build does not carry $ApiBaseUrl - it was compiled against a different backend. Rebuild without -SkipBuild."
+    }
+
     Write-Host "==> Zipping" -ForegroundColor Cyan
     if (Test-Path $Zip) { Remove-Item $Zip -Force }
     Compress-Archive -Path $Stage -DestinationPath $Zip -CompressionLevel Optimal
