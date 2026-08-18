@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +16,12 @@ import 'package:prism_venues/data/models/guardrails.dart';
 void main() {
   late List<http.Request> sent;
   late Map<String, Object> responses;
+
+  /// Set mid-test to take the network away entirely — every request throws,
+  /// which is what a real transport does when the Wi-Fi is off. Distinct from
+  /// `putStatus`, which is the server answering with a refusal: there the
+  /// corrective GET still works, and that difference IS finding F-4.
+  late bool offline;
 
   const guardrailsJson = {
     'volume_min_pct': 30,
@@ -48,6 +55,7 @@ void main() {
 
   setUp(() {
     sent = [];
+    offline = false;
     responses = {
       'guardrails': guardrailsJson,
       'open-hours': openHoursJson,
@@ -68,6 +76,9 @@ void main() {
       tokens: InMemoryTokenStore(),
       httpClient: MockClient((request) async {
         sent.add(request);
+        if (offline) {
+          throw const SocketException('Network is unreachable');
+        }
         if (request.method == 'PUT' && putStatus >= 400) {
           return http.Response(
             jsonEncode({
@@ -401,6 +412,38 @@ void main() {
         sub.cancel();
         repo.dispose();
       });
+    });
+
+    test('an unreachable server does not leave the rejected value on screen',
+        () async {
+      // F-4. The revert was a refresh — and offline, the corrective GET fails
+      // for exactly the reason the write did. `emit` had already written the
+      // optimistic value into the same cache the refresh would have repaired,
+      // and nothing refetches guardrails on a timer, so it survived
+      // reconnection: Settings read a volume band the server never accepted
+      // until the app was restarted. "Who can take over: Manager" read as a
+      // live policy that had never been saved.
+      final repo = buildRepo();
+      final seen = <Guardrails>[];
+      final sub = repo.watchGuardrails().listen(seen.add);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen.single.volumeMin, 30, reason: 'server truth, fetched once');
+
+      offline = true;
+      await repo.updateGuardrails(const Guardrails(volumeMin: 90));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen.last.volumeMin, 30,
+          reason: 'the value the server never accepted must not be the one '
+              'left on screen');
+
+      // And a later read still gives server truth rather than the rejected
+      // value, which is the half that survived reconnection.
+      offline = false;
+      expect((await repo.watchGuardrails().first).volumeMin, 30);
+
+      await sub.cancel();
+      repo.dispose();
     });
 
     test('a refused write snaps back to server truth instead of lying',

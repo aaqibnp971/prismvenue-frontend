@@ -103,6 +103,7 @@ class Daypart {
   }
 
   Daypart copyWith({
+    String? id,
     int? dayIndex,
     int? startHour,
     int? endHour,
@@ -116,7 +117,7 @@ class Daypart {
     bool clearWeekStart = false,
   }) =>
       Daypart(
-        id: id,
+        id: id ?? this.id,
         dayIndex: dayIndex ?? this.dayIndex,
         startHour: startHour ?? this.startHour,
         endHour: endHour ?? this.endHour,

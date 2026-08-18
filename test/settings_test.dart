@@ -43,6 +43,46 @@ void main() {
     await _settle(tester);
   }
 
+  testWidgets('F-2: Settings scrolls to Appearance on a short window',
+      (tester) async {
+    // QA reported Settings would not scroll under automation, leaving the
+    // Appearance section clipped and "System device" — the only theme option
+    // the top bar does not offer — unreachable. They flagged it unconfirmed
+    // because a human later saw it scrolled.
+    //
+    // This decides it: a window short enough that Appearance starts off-screen,
+    // then a real drag on the list.
+    await tester.binding.setSurfaceSize(const Size(1024, 520));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    container = ProviderContainer(overrides: [
+      playbackRepoProvider.overrideWith((ref) {
+        final repo = MockPlaybackRepo(tickNoise: false);
+        ref.onDispose(repo.dispose);
+        return repo;
+      }),
+    ]);
+    addTearDown(container.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+        container: container, child: const PrismVenuesApp()));
+    await _settle(tester);
+    await tester.enterText(
+        find.byType(TextField).first, 'manager@marinacafe.com');
+    await tester.tap(find.text('Sign in'));
+    await _settle(tester);
+    container.read(routerProvider).go('/settings');
+    await _settle(tester);
+
+    expect(find.text('Volume policy'), findsOneWidget);
+    final scrollable = find.byType(Scrollable).first;
+
+    await tester.drag(scrollable, const Offset(0, -600));
+    await _settle(tester);
+
+    expect(find.text('Appearance'), findsOneWidget,
+        reason: 'Appearance must be reachable by scrolling — it is the only '
+            'route to the "System device" theme');
+  });
+
   testWidgets('S05-1 home: pinned rows and seed values', (tester) async {
     await pumpApp(tester, email: 'priya@marinacafe.com');
     await toSettings(tester);

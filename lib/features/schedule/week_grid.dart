@@ -273,7 +273,18 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
             // is still carried by the block's colour and its Semantics label.
             child: LayoutBuilder(
               builder: (context, box) {
-                final showMood = box.maxHeight >= 32;
+                // Width as well as height. The mood row carries an 8pt dot
+                // and a 5pt gap that cannot shrink, so a block narrower than
+                // those 13pt overflows however hard the label ellipsises — and
+                // the picker offers five-minute dayparts, which on a 24-hour
+                // grid are a few points wide. 26 leaves the dot room to sit
+                // beside at least an ellipsis rather than a sliver of a letter.
+                //
+                // The height guard below it was added first and this one was
+                // missed, which is the same bug twice in one Row: a fixed-size
+                // child beside a flexible one, in a box that can be smaller
+                // than the fixed part.
+                final showMood = box.maxHeight >= 32 && box.maxWidth >= 26;
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,

@@ -116,6 +116,18 @@ class ApiSettingsRepo implements SettingsRepo {
           // instead, so the screens can say what happened rather than leaving
           // the revert below as the only clue.
           if (!_failures.isClosed) _failures.add(e);
+
+          // Revert from what we KNOW, not from the network.
+          //
+          // The refresh below was meant to do this, and cannot: the write
+          // failed because the server is unreachable, so the corrective GET
+          // fails too, and `emit` has already written the rejected value into
+          // the cache. Nothing refetches guardrails on a timer, so it survived
+          // reconnection and only a cold restart showed the real number —
+          // meanwhile "Who can take over: Manager" read as a live policy that
+          // had never been saved.
+          final known = _serverGuardrails[_scope.zoneKey()];
+          if (known != null) _guardrails.emit(known);
         }
       }
       // One sync with server truth per burst — after success it confirms the
@@ -144,10 +156,24 @@ class ApiSettingsRepo implements SettingsRepo {
   @visibleForTesting
   Future<void> refreshGuardrailsForTest() => _guardrails.refresh();
 
+  /// The last value the SERVER actually gave us, per zone.
+  ///
+  /// Kept because the optimistic `emit` in [updateGuardrails] writes into the
+  /// same cache that a corrective refresh would repair — so when that refresh
+  /// is the thing that failed, the rejected value is what stays cached. There
+  /// is then nothing left that remembers what the server really said.
+  ///
+  /// Keyed by zone for the same reason every `Watchable` is: two rooms have
+  /// two policies, and reverting one to the other's numbers would be its own
+  /// bug.
+  final _serverGuardrails = <String, Guardrails>{};
+
   Future<Guardrails> _fetchGuardrails() async {
     final json = await _client.get('/zones/${_scope.requireZone()}/guardrails')
         as Map<String, dynamic>;
-    return _guardrailsFromJson(json);
+    final value = _guardrailsFromJson(json);
+    _serverGuardrails[_scope.zoneKey()] = value;
+    return value;
   }
 
   // --- Open hours ------------------------------------------------------------

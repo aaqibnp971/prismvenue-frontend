@@ -61,9 +61,28 @@ Future<void> showDaypartSheet(
           await repo.forkWeek(weekStart);
         }
         final scopeToWeek = justThisWeek || alreadyForked;
-        final scoped = scopeToWeek
+        var scoped = scopeToWeek
             ? daypart.copyWith(weekStart: weekStart)
             : daypart.copyWith(clearWeekStart: true);
+
+        // Re-aim the edit at the COPY the fork just made.
+        //
+        // This is the half the comment above described and the code did not
+        // do. Forking duplicates every recurring row into the week under a new
+        // id; `existing.id` still names the recurring row it was copied FROM.
+        // Sending that id meant `PATCH /dayparts/{id}` — which never writes
+        // `week_start` — rewrote the recurring plan, so adjusting one Tuesday
+        // changed every Tuesday, and the server answered 200 because nothing
+        // about the request was invalid.
+        //
+        // Matched on the ORIGINAL day and times, because the fork is a copy of
+        // the plan as it was before this edit. A daypart is unique within a
+        // plan by (day, start) — migration 013 makes that a constraint — so the
+        // match is exact rather than a best guess.
+        if (justThisWeek && weekStart != null && existing != null) {
+          scoped = scoped.copyWith(
+              id: await _idInForkedWeek(repo, weekStart, existing));
+        }
         Future<void> write({required bool replace}) => existing == null
             ? repo.addDaypart(scoped, replace: replace)
             : repo.updateDaypart(scoped, replace: replace);
@@ -107,16 +126,60 @@ Future<void> showDaypartSheet(
           await write(replace: true);
         }
       case _Delete(:final id, justThisWeek: final deleteJustThisWeek):
-        // Same ordering rule as a save: fork first, or the id being deleted
-        // belongs to the recurring plan and the deletion would hit every week.
+        // Fork first, then delete the COPY. The comment here used to name the
+        // hazard — "the id being deleted belongs to the recurring plan and the
+        // deletion would hit every week" — and the code then did precisely
+        // that, because forking does not renumber the row the sheet was opened
+        // with. Deleting one Tuesday deleted every Tuesday.
+        var targetId = id;
         if (deleteJustThisWeek && weekStart != null) {
           await repo.forkWeek(weekStart);
+          if (existing != null) {
+            targetId = await _idInForkedWeek(repo, weekStart, existing);
+          }
         }
-        await repo.deleteDaypart(id);
+        await repo.deleteDaypart(targetId);
     }
   } catch (e) {
     if (context.mounted) showPrismError(context, e);
   }
+}
+
+/// The id of this daypart's copy inside a week that has just been forked.
+///
+/// Forking duplicates every recurring row under a **new** id, so the id the
+/// sheet was opened with names the row the copy was made FROM. Writing to it
+/// edits or deletes the recurring plan — every week — which is the opposite of
+/// what "just this week" means. The server cannot catch it either: the request
+/// is perfectly valid, so it answers 200, and `PATCH /dayparts/{id}` does not
+/// write `week_start` at all.
+///
+/// Matched on day and times rather than by position, because the fork is a copy
+/// of the plan as it stood before this change and a daypart is unique within a
+/// plan by (day, start) — migration 013 makes that a constraint.
+Future<String> _idInForkedWeek(
+  ScheduleRepo repo,
+  DateTime weekStart,
+  Daypart original,
+) async {
+  final forked = await repo.watchWeekPlan(weekStart).first;
+  final copy = forked
+      .where((d) =>
+          d.dayIndex == original.dayIndex &&
+          d.startMinutesOfDay == original.startMinutesOfDay &&
+          d.endMinutesOfDay == original.endMinutesOfDay)
+      .firstOrNull;
+  if (copy == null) {
+    // Refusing beats falling back to the recurring id, which IS the blocker:
+    // a change that silently rewrites every week is far worse than one that
+    // says it could not be applied.
+    throw const ApiException(
+      statusCode: 0,
+      code: 'fork_copy_missing',
+      message: 'That week could not be given its own plan. Nothing was changed.',
+    );
+  }
+  return copy.id;
 }
 
 const _dayNames = [

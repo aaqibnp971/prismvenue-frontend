@@ -10,6 +10,8 @@ import 'package:prism_venues/data/repositories/playback_repo.dart';
 import 'package:prism_venues/main.dart';
 import 'package:prism_venues/shared/widgets/seg_toggle.dart';
 import 'package:prism_venues/features/schedule/week_grid.dart';
+import 'package:prism_venues/theme/palette.dart';
+import 'package:prism_venues/theme/theme.dart';
 import 'package:prism_venues/shared/widgets/confirm_dialog.dart';
 import 'package:prism_venues/shared/widgets/prism_bottom_sheet.dart';
 
@@ -184,6 +186,102 @@ void main() {
     // No choice offered, and the consequence stated instead of left silent.
     expect(find.text('Every week'), findsNothing);
     expect(find.textContaining('This week only'), findsOneWidget);
+  });
+
+  testWidgets('a five-minute daypart does not overflow the grid',
+      (tester) async {
+    // F-3. The mood row carries an 8pt dot and a 5pt gap that cannot shrink,
+    // so a block narrower than those 13pt overflowed however hard the label
+    // ellipsised. The height guard was added when the block got shorter; the
+    // width one was missed — the same mistake twice in one Row.
+    //
+    // Reachable in ordinary use: the picker offers five-minute granularity,
+    // and five minutes on a 24-hour grid is a few points wide.
+    await tester.binding.setSurfaceSize(const Size(1024, 768));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(ProviderScope(
+      child: MaterialApp(
+        theme: buildPrismTheme(PrismPalette.dark),
+        home: Scaffold(
+          body: WeekGrid(
+            weekStart: DateTime(2026, 8, 24),
+            plan: [
+              const Daypart(
+                id: 'tiny',
+                dayIndex: 0,
+                startHour: 1,
+                endHour: 1,
+                startMinute: 15,
+                endMinute: 20,
+                moodId: 'peak',
+              ),
+            ],
+          ),
+        ),
+      ),
+    ));
+    await _settle(tester);
+
+    // Overflow throws in a test binding, so reaching here is the assertion.
+    expect(find.byType(WeekGrid), findsOneWidget);
+  });
+
+  testWidgets('"Just this week" edits that week, and leaves every other alone',
+      (tester) async {
+    // F-1, the QA blocker. Forking copies the recurring plan into the week and
+    // gives every copy a NEW id — the sheet's own comment says so — but the
+    // edit was then sent as `PATCH /dayparts/{id}` carrying the ORIGINAL
+    // recurring row's id. Against the API that rewrote the recurring plan, so
+    // adjusting one Tuesday changed every Tuesday. Against the mocks the id is
+    // simply not in the forked list and the edit vanishes. Both are this bug.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    // Monday's first block is 7 – 11 am, Morning calm on the seeded plan.
+    expect(find.text('Morning calm'), findsNWidgets(7));
+
+    await tester.tap(find.text('7 – 11 am').first);
+    await _settle(tester);
+    expect(find.text('Edit daypart'), findsOneWidget);
+
+    await tester.tap(find.text('Just this week'));
+    await _settle(tester);
+    await tester.tap(find.descendant(
+        of: find.byType(PrismBottomSheet), matching: find.text('Peak')));
+    await _settle(tester);
+    await tester.tap(find.text('Save'));
+    await _settle(tester);
+
+    // The edit has to be visible in the week it was made for. Six Morning
+    // calms left — Monday's became Peak.
+    expect(find.text('Morning calm'), findsNWidgets(6),
+        reason: 'the edit must land in the week it was scoped to');
+  });
+
+  testWidgets('deleting "just this week" leaves every other week alone',
+      (tester) async {
+    // The same defect as F-1 on the delete path, which QA did not reach. The
+    // comment there named the hazard and the code did it anyway: forking does
+    // not renumber the row the sheet was opened with, so deleting one Tuesday
+    // deleted every Tuesday.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+    expect(find.text('Morning calm'), findsNWidgets(7));
+
+    await tester.tap(find.text('7 – 11 am').first);
+    await _settle(tester);
+    await tester.tap(find.text('Just this week'));
+    await _settle(tester);
+    await tester.tap(find.text('Delete daypart'));
+    await _settle(tester);
+    // The dialog's confirm carries the same words as the row that opened it.
+    expect(find.text('Delete this daypart?'), findsOneWidget);
+    await tester.tap(find.text('Delete daypart').last);
+    await _settle(tester);
+
+    // Monday's block is gone from THIS week; the other six days are untouched.
+    expect(find.text('Morning calm'), findsNWidgets(6));
   });
 
   testWidgets('a forked week can be handed back to the weekly plan',
