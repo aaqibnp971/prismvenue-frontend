@@ -208,6 +208,35 @@ class MockScheduleRepo implements ScheduleRepo {
   }
 
   @override
+  Future<List<int>> addDayparts(
+    List<Daypart> dayparts, {
+    bool replace = false,
+  }) async {
+    final clashed = <int>[];
+    for (final daypart in dayparts) {
+      try {
+        _requireFreeSlot(daypart, replace: replace, exceptId: null);
+      } on ApiException catch (e) {
+        if (e.code != 'daypart_slot_taken') rethrow;
+        clashed.add(daypart.dayIndex);
+        continue;
+      }
+      _target.add(Daypart(
+        id: 'new-${_nextId++}',
+        dayIndex: daypart.dayIndex,
+        startHour: daypart.startHour,
+        endHour: daypart.endHour,
+        startMinute: daypart.startMinute,
+        endMinute: daypart.endMinute,
+        moodId: daypart.moodId,
+        weekStart: daypart.weekStart,
+      ));
+    }
+    _emitPlan();
+    return clashed;
+  }
+
+  @override
   Future<void> updateDaypart(Daypart daypart, {bool replace = false}) async {
     _requireFreeSlot(daypart, replace: replace, exceptId: daypart.id);
     // `_target`, not the recurring plan. Searching `_plan` meant a forked

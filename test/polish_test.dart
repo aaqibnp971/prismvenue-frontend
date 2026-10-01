@@ -28,6 +28,9 @@ void main() {
     );
     await _settle(tester);
     await tester.enterText(find.byType(TextField).first, email);
+    // Finding #21 refuses an empty password, as a person would be
+    // refused. The mocks accept any non-empty one.
+    await tester.enterText(find.byType(TextField).at(1), 'hunter22');
     await tester.tap(find.text('Sign in'));
     await _settle(tester);
   }
@@ -120,6 +123,9 @@ void main() {
     await pumpApp(tester,
         size: const Size(1024, 768), email: 'priya@marinacafe.com');
     await tester.tap(find.text('Settings'));
+    await _settle(tester);
+    // Below the fold since findings #10 and #17 added two groups above it.
+    await tester.ensureVisible(find.text('Zones & open hours'));
     await _settle(tester);
     await tester.tap(find.text('Zones & open hours'));
     await _settle(tester);

@@ -21,10 +21,14 @@ abstract class VenueRepo {
   /// the API carries a default zone to fall back on, so without it the column
   /// default stands — which is how every venue ended up on one arbitrary zone,
   /// and why a schedule typed in India fired on Gulf time.
+  /// Throws `venue_name_taken` (409) when the organisation already has a
+  /// venue by this name, unless [allowDuplicateName] says the owner was shown
+  /// that and chose to go ahead anyway (finding #20).
   Future<void> addVenue({
     required String name,
     required String address,
     required List<String> zoneNames,
+    bool allowDuplicateName = false,
     /// The clock the venue's schedule runs on, chosen on the S04-3 form. Wins
     /// over [deviceOffsets], which stays as the fallback for when the zone list
     /// could not be loaded.
@@ -38,6 +42,26 @@ abstract class VenueRepo {
 
   /// S05 "Time zone" — which clock this venue's schedule runs on.
   Future<void> setTimezone(String venueId, String timezone);
+
+  /// Correct a venue's name or address (finding #8).
+  ///
+  /// Null means "leave it alone", matching the PATCH's own rule — except for
+  /// [clearAddress], which is how an address is actually removed. A venue with
+  /// no address is legitimate; a venue with no name is not, so there is no
+  /// equivalent for the name.
+  Future<void> updateVenue(
+    String venueId, {
+    String? name,
+    String? address,
+    bool clearAddress = false,
+  });
+
+  /// Archive a venue. A soft delete, like [removeZone].
+  ///
+  /// The venue keeps its schedules, takeover history and idempotency records —
+  /// somebody's audit trail — and simply stops appearing. "We deleted the
+  /// wrong venue" is not a recoverable sentence.
+  Future<void> archiveVenue(String venueId);
 
   /// Add a zone to an existing venue — the other half of [removeZone].
   ///

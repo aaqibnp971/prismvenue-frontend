@@ -7,6 +7,7 @@ import '../../data/repositories/schedule_repo.dart';
 import '../../shared/widgets/day_chips.dart';
 import '../../shared/widgets/prism_bottom_sheet.dart';
 import '../../shared/widgets/error_note.dart';
+import '../../shared/widgets/prism_toast.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/seg_toggle.dart';
 import '../settings/widgets/time_field.dart';
@@ -27,12 +28,18 @@ import '../../theme/typography.dart';
 /// one": a week that has already diverged has nothing to ask — every edit
 /// stays in that week — and a week still on the recurring plan does, because
 /// forking is permanent in one direction and must never happen by accident.
+/// [dayIndex] and [startMinutes] pre-fill the sheet — finding #11. The add
+/// sheet always opened on Monday at 6pm, so building a week meant correcting
+/// the day on every one of thirty-five saves. Tapping an empty patch of
+/// Thursday afternoon should mean Thursday afternoon.
 Future<void> showDaypartSheet(
   BuildContext context,
   WidgetRef ref, {
   Daypart? existing,
   DateTime? weekStart,
   bool alreadyForked = false,
+  int? dayIndex,
+  int? startMinutes,
 }) async {
   final result = await showPrismSheet<_DaypartResult>(
     context,
@@ -41,6 +48,8 @@ Future<void> showDaypartSheet(
       existing: existing,
       canChooseScope: weekStart != null && !alreadyForked,
       forkedWeek: alreadyForked,
+      initialDay: dayIndex,
+      initialStart: startMinutes,
     ),
   );
   if (result == null) return;
@@ -52,7 +61,7 @@ Future<void> showDaypartSheet(
   // screen's mutations.
   try {
     switch (result) {
-      case _Save(:final daypart, :final justThisWeek):
+      case _Save(:final daypart, :final justThisWeek, :final days):
         // Fork FIRST, then write. Forking copies the recurring plan into the
         // week and gives every row a new id, so an edit applied beforehand
         // would either be copied into the fork twice or be aimed at an id the
@@ -83,6 +92,15 @@ Future<void> showDaypartSheet(
           scoped = scoped.copyWith(
               id: await _idInForkedWeek(repo, weekStart, existing));
         }
+        // Finding #11: adding writes one row per selected day. Editing is
+        // still one row — an existing daypart is a single row, and spreading
+        // it over a week is a different verb ("Copy day to…").
+        if (existing == null && days.length > 1) {
+          if (!context.mounted) return;
+          await _addAcrossDays(context, ref, repo, scoped, days);
+          return;
+        }
+
         Future<void> write({required bool replace}) => existing == null
             ? repo.addDaypart(scoped, replace: replace)
             : repo.updateDaypart(scoped, replace: replace);
@@ -91,8 +109,19 @@ Future<void> showDaypartSheet(
         // taken the slot a second ago — so a local pre-check would be both
         // slower to write and wrong more often. A 409 here is not a failure to
         // report, it is a question to put.
+        // Finding #14: a save used to close the sheet and say nothing. The
+        // grid does redraw, but only once the stream refreshes, and a block
+        // that moved by five minutes looks exactly like one that did not.
+        void saved() {
+          if (context.mounted) {
+            showPrismToast(
+                context, existing == null ? 'Daypart added' : 'Daypart saved');
+          }
+        }
+
         try {
           await write(replace: false);
+          saved();
         } on ApiException catch (e) {
           if (e.code != 'daypart_slot_taken') rethrow;
           if (!context.mounted) return;
@@ -124,6 +153,7 @@ Future<void> showDaypartSheet(
           );
           if (confirmed != true) return;
           await write(replace: true);
+          saved();
         }
       case _Delete(:final id, justThisWeek: final deleteJustThisWeek):
         // Fork first, then delete the COPY. The comment here used to name the
@@ -139,10 +169,63 @@ Future<void> showDaypartSheet(
           }
         }
         await repo.deleteDaypart(targetId);
+        if (context.mounted) showPrismToast(context, 'Daypart deleted');
     }
   } catch (e) {
     if (context.mounted) showPrismError(context, e);
   }
+}
+
+/// Writes one daypart onto several days, asking once about whatever was
+/// already there. Finding #11.
+///
+/// The repository writes every day it can and reports the ones whose slot was
+/// taken, rather than stopping at the first. A manager laying a block across
+/// Mon–Fri usually has something on exactly one of those days, and aborting
+/// the batch for it would make the fast path fail more often than the five
+/// separate saves it replaces.
+Future<void> _addAcrossDays(
+  BuildContext context,
+  WidgetRef ref,
+  ScheduleRepo repo,
+  Daypart daypart,
+  List<int> days,
+) async {
+  final clashed = await repo.addDayparts(
+    [for (final day in days) daypart.copyWith(dayIndex: day)],
+  );
+  if (!context.mounted) return;
+  if (clashed.isEmpty) {
+    showPrismToast(context, 'Added to ${days.length} days');
+    return;
+  }
+
+  // One question for the whole batch, naming the days. Asking per day would
+  // reintroduce exactly the tapping this feature exists to remove.
+  final plan = ref.read(weekPlanProvider(daypart.weekStart)).value;
+  final replaced = <String>{
+    for (final day in clashed)
+      ...?plan
+          ?.where((d) =>
+              d.dayIndex == day &&
+              d.startMinutesOfDay == daypart.startMinutesOfDay)
+          .map((d) => moodById(d.moodId).name),
+  };
+
+  final confirmed = await showReplaceDaypartDialog(
+    context,
+    timeLabel: TimeField.timeLabel(daypart.startMinutesOfDay),
+    dayName: clashed.map((d) => _dayNames[d]).join(', '),
+    newMoodName: moodById(daypart.moodId).name,
+    replacedMoodName: replaced.length == 1 ? replaced.first : null,
+  );
+  if (confirmed != true) return;
+
+  await repo.addDayparts(
+    [for (final day in clashed) daypart.copyWith(dayIndex: day)],
+    replace: true,
+  );
+  if (context.mounted) showPrismToast(context, 'Added to ${days.length} days');
 }
 
 /// The id of this daypart's copy inside a week that has just been forked.
@@ -195,8 +278,14 @@ const _dayNames = [
 sealed class _DaypartResult {}
 
 class _Save extends _DaypartResult {
-  _Save(this.daypart, {this.justThisWeek = false});
+  _Save(this.daypart, {this.justThisWeek = false, List<int>? days})
+      : days = days ?? [daypart.dayIndex];
   final Daypart daypart;
+
+  /// Every day the block should land on — finding #11. Always at least one,
+  /// and always exactly one when editing. [daypart] carries the first of them,
+  /// so a single-day save reads as it always did.
+  final List<int> days;
 
   /// True when the manager chose "Just this week" on a week that had not
   /// diverged yet — the only thing that ever creates a fork.
@@ -214,6 +303,8 @@ class _DaypartSheet extends StatefulWidget {
     this.existing,
     this.canChooseScope = false,
     this.forkedWeek = false,
+    this.initialDay,
+    this.initialStart,
   });
 
   final Daypart? existing;
@@ -229,12 +320,30 @@ class _DaypartSheet extends StatefulWidget {
   /// [canChooseScope]: one offers the decision, the other reports it.
   final bool forkedWeek;
 
+  /// Where the manager tapped — finding #11. Ignored when editing, which
+  /// takes its day and time from the row.
+  final int? initialDay;
+  final int? initialStart;
+
   @override
   State<_DaypartSheet> createState() => _DaypartSheetState();
 }
 
 class _DaypartSheetState extends State<_DaypartSheet> {
-  late int _day = widget.existing?.dayIndex ?? 0;
+  /// Finding #11: a set, because one block usually belongs on several days.
+  /// Editing keeps exactly one — an existing daypart is one row.
+  late Set<int> _days = {
+    widget.existing?.dayIndex ?? widget.initialDay ?? 0,
+  };
+
+  /// Whether the manager has touched the day chips yet.
+  ///
+  /// The day the sheet opens on is a guess — Monday, or wherever the grid was
+  /// tapped — so the FIRST chip tap replaces it rather than adding to it, and
+  /// every tap after that toggles. Without this, picking one day meant two
+  /// taps (choose it, then unpick the guess), which is a tax on the common
+  /// case to pay for the rarer one.
+  var _daysTouched = false;
   late String _moodId = widget.existing?.moodId ?? moods.first.id;
 
   // `open_questions.md` #18 flagged that no time picker was designed and the
@@ -246,8 +355,10 @@ class _DaypartSheetState extends State<_DaypartSheet> {
   // boundary is a business decision — a kitchen that turns over at 6:30, a bar
   // that lifts at 9:45 — and rounding it to the hour was a limit of the write
   // path, never of the column: `dayparts.start_local` is a Postgres `time`.
-  late int _start = widget.existing?.startMinutesOfDay ?? 18 * 60;
-  late int _end = widget.existing?.endMinutesOfDay ?? 21 * 60;
+  late int _start =
+      widget.existing?.startMinutesOfDay ?? widget.initialStart ?? 18 * 60;
+  late int _end = widget.existing?.endMinutesOfDay ??
+      ((widget.initialStart ?? 18 * 60) + 3 * 60).clamp(0, 24 * 60 - 1);
 
   /// Five minutes. Fine enough that nobody reaches for a keyboard, coarse
   /// enough that the wheel is twelve flickable items rather than sixty.
@@ -263,10 +374,15 @@ class _DaypartSheetState extends State<_DaypartSheet> {
   /// popped by the time the write runs, so a server rejection would have no
   /// dialog to report into.
   String? get _rangeError {
+    if (_days.isEmpty) return 'Pick at least one day.';
     if (_end == _start) return 'Start and end cannot be the same time.';
     if (_end < _start) return 'End time must be after the start time.';
     return null;
   }
+
+  /// Lowest selected day. The one the [Daypart] itself carries, so a
+  /// single-day save is byte-identical to what it was before finding #11.
+  int get _firstDay => (_days.toList()..sort()).first;
 
   @override
   Widget build(BuildContext context) {
@@ -276,7 +392,13 @@ class _DaypartSheetState extends State<_DaypartSheet> {
     return PrismBottomSheet(
       title: editing ? 'Edit daypart' : 'Add a daypart',
       sub: 'Pick day, time & mood.',
-      primaryLabel: editing ? 'Save' : 'Add daypart',
+      // Says how many rows the button is about to write. "Add daypart" on a
+      // tap that creates five is the app being coy about what it did.
+      primaryLabel: editing
+          ? 'Save'
+          : _days.length > 1
+              ? 'Add to ${_days.length} days'
+              : 'Add daypart',
       // There was no cross-field check here and the server validated each hour
       // only as 0–23, so "Starts 9pm / Ends 7am" saved cleanly, as did a
       // zero-length 6pm–6pm. These decide what actually plays in the room, and
@@ -287,7 +409,7 @@ class _DaypartSheetState extends State<_DaypartSheet> {
           : () => Navigator.of(context).pop(_Save(
                 Daypart(
                   id: widget.existing?.id ?? '',
-                  dayIndex: _day,
+                  dayIndex: _firstDay,
                   startHour: _start ~/ 60,
                   endHour: _end ~/ 60,
                   startMinute: _start % 60,
@@ -295,15 +417,34 @@ class _DaypartSheetState extends State<_DaypartSheet> {
                   moodId: _moodId,
                 ),
                 justThisWeek: _justThisWeek,
+                days: _days.toList()..sort(),
               )),
       onCancel: () => Navigator.of(context).pop(),
       children: [
         const SizedBox(height: 16),
-        // Day chips row — §3 DayChips (12/700), single-select for S03-4.
+        // Day chips row — §3 DayChips (12/700). Multi-select when adding
+        // (finding #11 — the widget already held a Set), single when editing.
         DayChips(
-          selected: {_day},
-          onToggle: (i) => setState(() => _day = i),
+          selected: _days,
+          onToggle: (i) => setState(() {
+            if (editing || !_daysTouched) {
+              _daysTouched = true;
+              _days = {i};
+            } else if (!_days.remove(i)) {
+              _days.add(i);
+            }
+          }),
         ),
+        if (!editing) ...[
+          const SizedBox(height: 7),
+          Text(
+            _days.length > 1
+                ? 'The same block will be added to ${_days.length} days.'
+                : 'Tap more days to add the same block to each of them.',
+            style:
+                PrismType.microHelper.copyWith(color: palette.textSecondary),
+          ),
+        ],
         if (widget.canChooseScope) ...[
           const SizedBox(height: 14),
           Text('Applies to',
@@ -444,8 +585,17 @@ class _DaypartSheetState extends State<_DaypartSheet> {
             onTap: () async {
               final confirmed = await showConfirmDeleteDaypartDialog(
                 context,
-                dayName: DayChips.labels[_day],
-                rangeLabel: Daypart.formatRange(_start, _end),
+                dayName: DayChips.labels[_firstDay],
+                // Minutes past midnight in, hours and minutes out. This passed
+                // the raw minute counts as hours, so the dialog offered to
+                // delete "12 – 12 pm" whatever the block actually was — a
+                // confirmation naming the wrong thing is worse than none.
+                rangeLabel: Daypart.formatRange(
+                  _start ~/ 60,
+                  _end ~/ 60,
+                  startMinute: _start % 60,
+                  endMinute: _end % 60,
+                ),
                 moodName: moodById(_moodId).name,
               );
               if (confirmed != true) return;

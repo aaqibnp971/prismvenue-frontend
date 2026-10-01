@@ -3,6 +3,7 @@ import 'dart:async';
 import '../models/schedule_entry.dart';
 import '../repositories/schedule_repo.dart';
 import 'api_client.dart';
+import 'api_exception.dart';
 import 'api_scope.dart';
 import 'watchable.dart';
 
@@ -108,6 +109,31 @@ class ApiScheduleRepo implements ScheduleRepo {
       body: {..._daypartToJson(daypart), 'replace': replace},
     );
     await _refreshPlan();
+  }
+
+  @override
+  Future<List<int>> addDayparts(
+    List<Daypart> dayparts, {
+    bool replace = false,
+  }) async {
+    final clashed = <int>[];
+    for (final daypart in dayparts) {
+      try {
+        await _client.post(
+          '/zones/${_scope.requireZone()}/dayparts',
+          body: {..._daypartToJson(daypart), 'replace': replace},
+        );
+      } on ApiException catch (e) {
+        // A taken slot is a question, not a failure. Everything else is a
+        // failure, and stopping is the honest thing to do with one.
+        if (e.code != 'daypart_slot_taken') rethrow;
+        clashed.add(daypart.dayIndex);
+      }
+    }
+    // Once, after the whole batch. Seven writes each refetching the plan and
+    // today's rail is fourteen requests to show one change.
+    await _refreshPlan();
+    return clashed;
   }
 
   @override

@@ -42,6 +42,9 @@ void main() {
     );
     await _settle(tester);
     await tester.enterText(find.byType(TextField).first, email);
+    // Finding #21 refuses an empty password, as a person would be
+    // refused. The mocks accept any non-empty one.
+    await tester.enterText(find.byType(TextField).at(1), 'hunter22');
     await tester.tap(find.text('Sign in'));
     await _settle(tester);
   }
@@ -319,6 +322,9 @@ void main() {
     await _settle(tester);
     await tester.enterText(
         find.byType(TextField).first, 'priya@marinacafe.com');
+    // Finding #21 refuses an empty password, as a person would be
+    // refused. The mocks accept any non-empty one.
+    await tester.enterText(find.byType(TextField).at(1), 'hunter22');
     await tester.tap(find.text('Sign in'));
     await _settle(tester);
     await tester.tap(find.text('Schedule'));
@@ -376,6 +382,9 @@ void main() {
     await _settle(tester);
     await tester.enterText(
         find.byType(TextField).first, 'priya@marinacafe.com');
+    // Finding #21 refuses an empty password, as a person would be
+    // refused. The mocks accept any non-empty one.
+    await tester.enterText(find.byType(TextField).at(1), 'hunter22');
     await tester.tap(find.text('Sign in'));
     await _settle(tester);
     // Custom plan, so the rail is a plan — and it is empty.

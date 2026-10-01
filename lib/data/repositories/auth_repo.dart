@@ -56,6 +56,18 @@ abstract class AuthRepo {
 
   /// Discard stored credentials. Safe to call when already signed out.
   Future<void> signOut();
+
+  /// Change the signed-in user's password (finding #17).
+  ///
+  /// [currentPassword] is required and really is checked — a venue iPad is a
+  /// shared device left unlocked on a counter, and a bearer token alone must
+  /// not be enough to take an account from its owner.
+  ///
+  /// Throws `wrong_password` (422) when it does not match.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  });
 }
 
 final authRepoProvider = Provider<AuthRepo>((ref) => MockAuthRepo());

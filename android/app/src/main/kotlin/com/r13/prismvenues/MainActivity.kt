@@ -7,6 +7,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
 
     private var audioFocus: AudioFocusWatcher? = null
+    private var screenAwake: ScreenAwake? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -21,6 +22,17 @@ class MainActivity : FlutterActivity() {
         val watcher = AudioFocusWatcher(applicationContext, channel)
         audioFocus = watcher
         channel.setMethodCallHandler { call, result -> watcher.handle(call, result) }
+
+        // Finding #1. Separate channel from audio focus: focus is the OS
+        // telling us whether we MAY play, this is us telling the OS that we
+        // ARE — opposite directions, and conflating them made the focus
+        // handler's contract harder to read.
+        val awake = ScreenAwake(this)
+        screenAwake = awake
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "prism/playback_service",
+        ).setMethodCallHandler { call, result -> awake.handle(call, result) }
     }
 
     override fun onDestroy() {
@@ -28,6 +40,8 @@ class MainActivity : FlutterActivity() {
         // tablet that has been closed should not be holding the speakers.
         audioFocus?.dispose()
         audioFocus = null
+        screenAwake?.dispose()
+        screenAwake = null
         super.onDestroy()
     }
 }

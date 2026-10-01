@@ -27,6 +27,10 @@ class MockSettingsRepo implements SettingsRepo {
 
   final _guardrailsByZone = <String?, Guardrails>{};
 
+  /// What this mock holds for one zone, or null if it has never been written.
+  /// Test seam for finding #10's apply-to-all.
+  Guardrails? guardrailsForZone(String zoneId) => _guardrailsByZone[zoneId];
+
   Guardrails get _guardrails =>
       _guardrailsByZone[_zoneId()] ?? const Guardrails();
 
@@ -55,6 +59,20 @@ class MockSettingsRepo implements SettingsRepo {
   Stream<Object> get guardrailFailures => const Stream.empty();
 
   @override
+  Future<void> applyGuardrailsToVenue(
+    String venueId,
+    List<String> zoneIds,
+    Guardrails guardrails,
+  ) async {
+    // The mock keys guardrails by zone exactly as the schema does, so this is
+    // the same write repeated — which is what the real repo does too.
+    for (final zoneId in zoneIds) {
+      _guardrailsByZone[zoneId] = guardrails;
+    }
+    _guardrailsController.add(guardrails);
+  }
+
+  @override
   Future<void> updateGuardrails(Guardrails next) async {
     _guardrailsByZone[_zoneId()] = next;
     _guardrailsController.add(next);
@@ -72,9 +90,18 @@ class MockSettingsRepo implements SettingsRepo {
   }
 
   @override
-  Future<void> setEverydayHours(
-      {required int openHour, required int closeHour}) async {
-    _emitHours(_hours.copyWith(openHour: openHour, closeHour: closeHour));
+  Future<void> setEverydayHours({
+    required int openHour,
+    required int closeHour,
+    int openMinute = 0,
+    int closeMinute = 0,
+  }) async {
+    _emitHours(_hours.copyWith(
+      openHour: openHour,
+      closeHour: closeHour,
+      openMinute: openMinute,
+      closeMinute: closeMinute,
+    ));
   }
 
   @override
@@ -86,6 +113,8 @@ class MockSettingsRepo implements SettingsRepo {
       days: exception.days,
       openHour: exception.openHour,
       closeHour: exception.closeHour,
+      openMinute: exception.openMinute,
+      closeMinute: exception.closeMinute,
       closedAllDay: exception.closedAllDay,
       everyWeek: exception.everyWeek,
     );

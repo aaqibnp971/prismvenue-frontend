@@ -34,6 +34,9 @@ void main() {
     );
     await _settle(tester);
     await tester.enterText(find.byType(TextField).first, email);
+    // Finding #21 refuses an empty password, as a person would be
+    // refused. The mocks accept any non-empty one.
+    await tester.enterText(find.byType(TextField).at(1), 'hunter22');
     await tester.tap(find.text('Sign in'));
     await _settle(tester);
   }
@@ -67,6 +70,9 @@ void main() {
     await _settle(tester);
     await tester.enterText(
         find.byType(TextField).first, 'manager@marinacafe.com');
+    // Finding #21 refuses an empty password, as a person would be
+    // refused. The mocks accept any non-empty one.
+    await tester.enterText(find.byType(TextField).at(1), 'hunter22');
     await tester.tap(find.text('Sign in'));
     await _settle(tester);
     container.read(routerProvider).go('/settings');
@@ -188,6 +194,11 @@ void main() {
     await pumpApp(tester, email: 'priya@marinacafe.com');
     await toSettings(tester);
 
+    // Findings #10 and #17 added two groups above this one, so at 1024×768 it
+    // now sits below the fold. Scrolled to rather than the page shortened:
+    // the rows earn their place, and a settings page is expected to scroll.
+    await tester.ensureVisible(find.text('Zones & open hours'));
+    await _settle(tester);
     await tester.tap(find.text('Zones & open hours'));
     await _settle(tester);
     expect(find.text('Everyday timings'), findsOneWidget);
@@ -310,9 +321,13 @@ void main() {
     await tester.tap(find.text('Who can take over'));
     await _settle(tester);
     expect(find.text('Manager + Floor'), findsOneWidget);
-    await tester.tap(find.text('Manager'));
+    // `.last` because finding #17's Account group now shows this manager's own
+    // role, so a bare "Manager" matches two different things: who they are,
+    // and who may take over. The menu option is the one below.
+    await tester.tap(find.text('Manager').last);
     await _settle(tester);
-    expect(find.text('Manager'), findsOneWidget); // home row value updated
+    // Two now: the Role row and this row's value.
+    expect(find.text('Manager'), findsNWidgets(2));
 
     // Sign out, sign in as floor staff: takeover is now gated.
     await tester.tap(find.text('PN'));
@@ -321,6 +336,9 @@ void main() {
     await _settle(tester);
     await tester.enterText(
         find.byType(TextField).first, 'floor@marinacafe.com');
+    // Finding #21 refuses an empty password, as a person would be
+    // refused. The mocks accept any non-empty one.
+    await tester.enterText(find.byType(TextField).at(1), 'hunter22');
     await tester.tap(find.text('Sign in'));
     await _settle(tester);
     expect(find.text('NOW PLAYING'), findsOneWidget);

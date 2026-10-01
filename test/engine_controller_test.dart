@@ -9,6 +9,7 @@ import 'package:prism_venues/data/repositories/settings_repo.dart';
 import 'package:flutter/services.dart';
 import 'package:prism_venues/engine/audio_focus.dart';
 import 'package:prism_venues/engine/engine_controller.dart';
+import 'package:prism_venues/engine/playback_service.dart';
 import 'package:prism_venues/engine/prism_engine.dart';
 import 'package:prism_venues/engine/weather_influence.dart';
 
@@ -61,6 +62,27 @@ void main() {
   late List<String> platformCalls;
   bool? focusGranted;
 
+  /// Calls the app makes to the foreground-service channel (finding #1).
+  ///
+  /// Android only implements it; every other platform throws
+  /// MissingPluginException, which the Dart seam swallows. Installing a
+  /// handler here stands in for Android so the ORDER and the PAIRING can be
+  /// asserted — a service that outlives the audio is a notification lying to
+  /// staff on a locked tablet.
+  late List<String> serviceCalls;
+
+  void installServiceHandler() {
+    serviceCalls = [];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(playbackServiceChannel, (call) async {
+      serviceCalls.add(call.method);
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(playbackServiceChannel, null));
+  }
+
   void installPlatformHandler() {
     platformCalls = [];
     focusGranted = null;
@@ -103,6 +125,44 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 2));
     }
   }
+
+  test('the foreground service starts with the room and stops with it',
+      () async {
+    // Finding #1: without the service Android reclaims the process once the
+    // screen is off, and the room goes quiet with nothing to say why.
+    installServiceHandler();
+    final container = build();
+    await container.read(authControllerProvider).signIn('owner@x.com', 'pw');
+    await settle();
+
+    expect(serviceCalls, contains('startPlaying'),
+        reason: 'a playing room must hold the service up');
+
+    serviceCalls.clear();
+    await container.read(authControllerProvider).signOut();
+    await settle();
+
+    expect(serviceCalls, contains('stopPlaying'),
+        reason: 'a silent room must not keep the notification or the screen on');
+  });
+
+  test('every route to silence tears the service down', () async {
+    // quiet() is the single place, so pause, takeover and external audio all
+    // get this for free. External audio is the one that used to be easiest to
+    // miss: the room is silent but nothing about the session changed.
+    installServiceHandler();
+    installPlatformHandler();
+    final container = build();
+    await container.read(authControllerProvider).signIn('owner@x.com', 'pw');
+    await settle();
+    serviceCalls.clear();
+
+    await externalAudio(true);
+    await settle();
+
+    expect(serviceCalls, contains('stopPlaying'));
+    expect(engine.silenced, isTrue);
+  });
 
   test('signing out silences the room', () async {
     // Every other stream the controller watches is zone-scoped, and signing out

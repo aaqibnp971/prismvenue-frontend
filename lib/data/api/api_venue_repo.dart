@@ -70,6 +70,7 @@ class ApiVenueRepo implements VenueRepo {
     required String name,
     required String address,
     required List<String> zoneNames,
+    bool allowDuplicateName = false,
     String? timezone,
     DeviceOffsets? deviceOffsets,
   }) async {
@@ -77,6 +78,7 @@ class ApiVenueRepo implements VenueRepo {
       'name': name,
       'address': address,
       'zone_names': zoneNames,
+      'allow_duplicate_name': allowDuplicateName,
       // Omitted rather than null when unset, so the server's "resolve the
       // device's offsets instead" branch is the one that runs.
       'timezone': ?timezone,
@@ -104,6 +106,28 @@ class ApiVenueRepo implements VenueRepo {
     await _client.patch('/venues/$venueId', body: {'timezone': timezone});
     // Every daypart's "is it now" answer moves with this, so the schedule
     // streams are as stale as the venue rows are.
+    await _refreshAll();
+  }
+
+  @override
+  Future<void> updateVenue(
+    String venueId, {
+    String? name,
+    String? address,
+    bool clearAddress = false,
+  }) async {
+    await _client.patch('/venues/$venueId', body: {
+      'name': ?name,
+      // Explicit null clears it; absent leaves it. The PATCH draws that line
+      // with `exclude_unset`, so the two must stay distinguishable here.
+      if (clearAddress) 'address': null else 'address': ?address,
+    });
+    await _refreshAll();
+  }
+
+  @override
+  Future<void> archiveVenue(String venueId) async {
+    await _client.delete('/venues/$venueId');
     await _refreshAll();
   }
 
@@ -196,6 +220,11 @@ class ApiVenueRepo implements VenueRepo {
         },
         moodId: json['mood_id'] as String? ?? 'daytime-flow',
         statusDetail: json['status_detail'] as String?,
+        // Sent as UTC ISO 8601; compared against the reader's own clock, so it
+        // is held in local time from here on.
+        lastSeenAt: json['last_seen_at'] == null
+            ? null
+            : DateTime.parse(json['last_seen_at'] as String).toLocal(),
       );
 
   void dispose() {

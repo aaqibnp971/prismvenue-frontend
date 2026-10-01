@@ -27,6 +27,9 @@ void main() {
     );
     await _settle(tester);
     await tester.enterText(find.byType(TextField).first, 'floor@marinacafe.com');
+    // Finding #21 refuses an empty password, as a person would be
+    // refused. The mocks accept any non-empty one.
+    await tester.enterText(find.byType(TextField).at(1), 'hunter22');
     await tester.tap(find.text('Sign in'));
     await _settle(tester);
     await tester.tap(find.text('Take over'));

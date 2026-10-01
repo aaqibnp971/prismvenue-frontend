@@ -22,4 +22,14 @@ class Env {
   /// [apiBaseUrl]. Useful for design review and for running the widget tests
   /// the way they ran before the backend existed.
   static const useMocks = bool.fromEnvironment('PRISM_USE_MOCKS');
+
+  /// Shown against this installation in the device list, so a venue reporting
+  /// an old build can be spotted. Set by the packaging scripts; empty in a
+  /// plain `flutter run`, and simply omitted from the report when it is.
+  static const appVersion = String.fromEnvironment('PRISM_APP_VERSION');
+
+  /// Shown on the offline-zone help sheet, e.g. "support@r13labs.com". Empty
+  /// by default and then simply not shown: a screen that says "contact
+  /// support" and names nobody is worse than one that stays quiet.
+  static const supportContact = String.fromEnvironment('PRISM_SUPPORT_CONTACT');
 }

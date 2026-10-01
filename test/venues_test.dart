@@ -88,6 +88,9 @@ void main() {
     await _settle(tester);
     await tester.enterText(
         find.byType(TextField).first, 'owner@marinacafe.com');
+    // Finding #21 refuses an empty password, as a person would be
+    // refused. The mocks accept any non-empty one.
+    await tester.enterText(find.byType(TextField).at(1), 'hunter22');
     await tester.tap(find.text('Sign in'));
     await _settle(tester);
   }
@@ -117,9 +120,32 @@ void main() {
 
     await tester.tap(find.text('Return to Auto'));
     await _settle(tester);
+
+    // Finding #13: this used to act on the single tap. It now asks first, the
+    // same way the identical action on Floor always has — two controls for one
+    // thing must not behave differently, and a fire-and-forget mutation gives
+    // no other chance to change your mind.
+    expect(find.text('Let Prism take it from here?'), findsOneWidget);
+    await tester.tap(find.text('Let Prism drive'));
+    await _settle(tester);
+
     expect(find.text('Return to Auto'), findsNothing);
     expect(find.textContaining('Off schedule'), findsNothing);
     expect(find.text('2 zones · Afternoon lift'), findsOneWidget);
+  });
+
+  testWidgets('S04-2 quick-fix: cancelling leaves the room alone',
+      (tester) async {
+    // The point of asking. Dismissing must change nothing at all.
+    await pumpPortfolio(tester);
+
+    await tester.tap(find.text('Return to Auto'));
+    await _settle(tester);
+    await tester.tap(find.text('Cancel'));
+    await _settle(tester);
+
+    expect(find.text('Return to Auto'), findsOneWidget);
+    expect(find.textContaining('Off schedule'), findsWidgets);
   });
 
   testWidgets('S04-1 drill-in: venue header + zone rows with statuses',
@@ -133,10 +159,21 @@ void main() {
     expect(find.text('Auto · Afternoon lift'), findsOneWidget);
     expect(find.text('Off schedule · auto in 42 min'), findsOneWidget);
 
-    // Quick-fix works here too.
+    // Quick-fix works here too, and asks first. This comment used to claim the
+    // venue screen's own row "has always confirmed" while the test tapped it
+    // once and watched the room change: finding #13 was fixed on the portfolio
+    // row and missed here, one screen deeper, on the same button.
     await tester.tap(find.text('Return to Auto'));
     await _settle(tester);
+    expect(find.text('Let Prism take it from here?'), findsOneWidget);
+    // Nothing has changed yet — the dialog is the only chance to back out.
+    expect(find.text('Off schedule · auto in 42 min'), findsOneWidget);
+
+    await tester.tap(find.text('Let Prism drive'));
+    await _settle(tester);
     expect(find.text('Auto · Evening warmth'), findsOneWidget);
+    // Finding #14: and it says so afterwards.
+    expect(find.text('Terrace is back on Auto'), findsOneWidget);
   });
 
   testWidgets('S04-1 "Open floor": switches the whole app to that zone',
@@ -169,6 +206,9 @@ void main() {
     await _settle(tester);
     await tester.enterText(
         find.byType(TextField).first, 'priya@marinacafe.com');
+    // Finding #21 refuses an empty password, as a person would be
+    // refused. The mocks accept any non-empty one.
+    await tester.enterText(find.byType(TextField).at(1), 'hunter22');
     await tester.tap(find.text('Sign in'));
     await _settle(tester);
 

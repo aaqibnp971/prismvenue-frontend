@@ -172,17 +172,22 @@ void main() {
       expect(Guardrails.offlineAlertOptions[g.offlineAlertIndex], '15 min');
     });
 
-    test('quiet-hours start and cap are never sent', () async {
-      // The model has no field for them; sending null would wipe the stored
-      // values on every toggle. INTEGRATION_PLAN.md §5.7.
+    test('quiet-hours start and cap are sent, so an edit can persist', () async {
+      // This test used to assert the opposite, and was right to: the model had
+      // no field for either, so sending null would have wiped the stored
+      // values on every toggle (INTEGRATION_PLAN.md §5.7). Finding #5 gave
+      // them fields, which is what makes the setting editable at all.
       final repo = buildRepo();
-      await repo.updateGuardrails(const Guardrails());
+      await repo.updateGuardrails(const Guardrails(
+        quietHoursStartMinutes: 23 * 60 + 30,
+        quietHoursCapPct: 40,
+      ));
 
       final body = jsonDecode(
         sent.firstWhere((r) => r.method == 'PUT').body,
       ) as Map<String, dynamic>;
-      expect(body.containsKey('quiet_hours_start_local'), isFalse);
-      expect(body.containsKey('quiet_hours_cap_pct'), isFalse);
+      expect(body['quiet_hours_start_local'], '23:30');
+      expect(body['quiet_hours_cap_pct'], 40);
     });
   });
 
@@ -233,6 +238,93 @@ void main() {
       final del = sent.firstWhere((r) => r.method == 'DELETE');
       expect(del.url.path, endsWith('/open-hours/exceptions/e-1'));
       expect(sent.where((r) => r.method == 'GET'), isNotEmpty);
+    });
+
+    test('setEverydayHours sends the minutes beside the hours', () async {
+      // Finding #18. A venue opening at 10:30 had to round, and rounding
+      // either way is wrong: early plays to an empty room, late leaves the
+      // first half hour silent.
+      final repo = buildRepo();
+
+      await repo.setEverydayHours(
+        openHour: 10,
+        openMinute: 30,
+        closeHour: 19,
+        closeMinute: 45,
+      );
+
+      final put = sent.firstWhere((r) => r.method == 'PUT');
+      final body = jsonDecode(put.body) as Map<String, dynamic>;
+      expect(body['open_hour'], 10);
+      expect(body['open_minute'], 30);
+      expect(body['close_hour'], 19);
+      expect(body['close_minute'], 45);
+    });
+
+    test('an omitted minute is sent as zero, not left out', () async {
+      // The server defaults it either way; sending it keeps the request shape
+      // the same whichever caller built it.
+      final repo = buildRepo();
+
+      await repo.setEverydayHours(openHour: 9, closeHour: 2);
+
+      final body = jsonDecode(
+        sent.firstWhere((r) => r.method == 'PUT').body,
+      ) as Map<String, dynamic>;
+      expect(body['open_minute'], 0);
+      expect(body['close_minute'], 0);
+    });
+
+    test('an exception carries its minutes too', () async {
+      final repo = buildRepo();
+
+      await repo.addException(const HoursException(
+        days: {0},
+        openHour: 11,
+        openMinute: 15,
+        closeHour: 23,
+        closeMinute: 30,
+      ));
+
+      final body = jsonDecode(
+        sent.firstWhere((r) => r.method == 'POST').body,
+      ) as Map<String, dynamic>;
+      expect(body['open_minute'], 15);
+      expect(body['close_minute'], 30);
+    });
+
+    test('a server with no minute columns still reads as the hour', () async {
+      // The mapper defaults rather than throwing, so the app keeps working
+      // against a backend deployed before migration 019.
+      final hours = await buildRepo().watchOpenHours().first;
+
+      expect(hours.openMinute, 0);
+      expect(hours.exceptions.single.closeMinute, 0);
+    });
+
+    test('a whole hour is still spelled without ":00"', () {
+      // rangeLabel mirrors hourLabel() in the Deno backend and _hour_label in
+      // FastAPI character for character \u2014 hours_label is formatted
+      // server-side and rendered verbatim on the screen beside this one, so a
+      // difference shows up as two spellings of the same venue.
+      expect(
+        const OpenHours(openHour: 7, closeHour: 23).rangeLabel,
+        '7am\u201311pm',
+      );
+    });
+
+    test('a half hour says so, and noon and midnight keep their 12', () {
+      expect(
+        const OpenHours(
+          openHour: 10,
+          openMinute: 30,
+          closeHour: 19,
+          closeMinute: 45,
+        ).rangeLabel,
+        '10:30am\u20137:45pm',
+      );
+      expect(OpenHours.timeLabel(0, 5), '12:05am');
+      expect(OpenHours.timeLabel(12, 5), '12:05pm');
     });
 
     test('addException posts the day set and refreshes', () async {

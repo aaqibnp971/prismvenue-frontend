@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../shared/widgets/prism_toast.dart';
+import '../floor/widgets/confirm_auto_dialog.dart';
 import '../../app/local_playback.dart';
 import '../../app/session.dart';
 import '../../app/venue_header.dart';
@@ -12,6 +14,7 @@ import '../../shared/widgets/error_state.dart';
 import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/zone_row.dart' as rows;
+import 'widgets/offline_help_sheet.dart';
 import 'add_zone_sheet.dart';
 import '../../theme/moods.dart';
 import '../../theme/palette.dart';
@@ -159,15 +162,38 @@ class VenueScreen extends ConsumerWidget {
                                         );
                                     context.go('/floor');
                                   },
-                            quickFixLabel:
-                                zone.status == ZoneStatus.offSchedule
-                                    ? 'Return to Auto'
-                                    : null,
+                            // An offline row used to offer nothing at all —
+                            // it named a problem and left the reader with no
+                            // next step (#16). It deliberately does NOT get
+                            // "Return to Auto": there is nothing to fix
+                            // remotely on a room that is not listening.
+                            quickFixLabel: switch (zone.status) {
+                              ZoneStatus.offSchedule => 'Return to Auto',
+                              ZoneStatus.offline => 'What to check',
+                              ZoneStatus.auto => null,
+                            },
                             onQuickFix: () async {
+                              if (zone.status == ZoneStatus.offline) {
+                                await showOfflineHelp(context, zone);
+                                return;
+                              }
+                              // Finding #13, the half that was missed.
+                              // The portfolio row asked first; this one —
+                              // the same button, one screen deeper — still
+                              // changed the room on a single tap and said
+                              // nothing afterwards.
+                              if (await showConfirmAutoDialog(context) !=
+                                  true) {
+                                return;
+                              }
                               try {
                                 await ref
                                     .read(venueRepoProvider)
                                     .returnZoneToAuto(venue.id, zone.id);
+                                if (context.mounted) {
+                                  showPrismToast(
+                                      context, '${zone.name} is back on Auto');
+                                }
                               } catch (e) {
                                 if (context.mounted) {
                                   showPrismError(context, e);
@@ -204,8 +230,15 @@ class VenueScreen extends ConsumerWidget {
       ref.read(currentZoneIdProvider) == zoneId;
 
   /// Quiet-row sub is underspecified — derived (open_questions).
+  ///
+  /// The offline line carries its age (#16). "Offline" alone cannot tell an
+  /// owner whether the Wi-Fi blipped or nobody has switched that tablet on
+  /// since it was installed.
   static String _statusText(Zone zone) => switch (zone.status) {
-        ZoneStatus.offline => zone.statusDetail ?? 'Offline',
+        ZoneStatus.offline => switch (lastSeenLabel(zone.lastSeenAt)) {
+            final seen? => 'Offline · last seen $seen',
+            _ => 'Offline · never reported',
+          },
         ZoneStatus.offSchedule => zone.statusDetail ?? 'Off schedule',
         ZoneStatus.auto => 'Auto · ${moodById(zone.moodId).name}',
       };

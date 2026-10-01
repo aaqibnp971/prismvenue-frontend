@@ -23,13 +23,20 @@ Future<void> showEverydayHoursSheet(BuildContext context, WidgetRef ref) async {
         initialOpen: current.$1, initialClose: current.$2),
   );
   if (result != null) {
-    await hours.setEverydayHours(openHour: result.$1, closeHour: result.$2);
+    // Minutes past midnight in, hour + minute out — finding #18.
+    await hours.setEverydayHours(
+      openHour: result.$1 ~/ 60,
+      openMinute: result.$1 % 60,
+      closeHour: result.$2 ~/ 60,
+      closeMinute: result.$2 % 60,
+    );
   }
 }
 
+/// Opening and closing time, each as minutes past midnight.
 Future<(int, int)> hoursOf(WidgetRef ref) async {
   final h = await ref.read(settingsRepoProvider).watchOpenHours().first;
-  return (h.openHour, h.closeHour);
+  return (h.openMinutes, h.closeMinutes);
 }
 
 class _EverydayHoursSheet extends StatefulWidget {
@@ -44,10 +51,26 @@ class _EverydayHoursSheet extends StatefulWidget {
 }
 
 class _EverydayHoursSheetState extends State<_EverydayHoursSheet> {
+  /// The same step a daypart uses. Five minutes is finer than any venue has
+  /// ever asked for and coarse enough that the wheel is still a flick.
+  static const _minuteStep = 5;
+
+  /// Minutes past midnight, both of them.
   late int _open = widget.initialOpen;
   late int _close = widget.initialClose;
 
-  int get _openDuration => (_close - _open) % 24;
+  /// Finding #18: minutes exist now, so the helper line has to survive a span
+  /// that is not a whole number of hours. "16 hours" stays "16 hours";
+  /// 10:30–19:45 reads "9 hours 15 minutes" rather than rounding to a number
+  /// that contradicts the two fields above it.
+  String get _openDuration {
+    final span = (_close - _open) % (24 * 60);
+    final h = span ~/ 60;
+    final m = span % 60;
+    final hours = h == 1 ? '1 hour' : '$h hours';
+    if (m == 0) return hours;
+    return '$hours ${m == 1 ? '1 minute' : '$m minutes'}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -65,33 +88,29 @@ class _EverydayHoursSheetState extends State<_EverydayHoursSheet> {
             Expanded(
               child: TimeField(
                 label: 'Opens',
-                minutes: _open * 60,
+                minutes: _open,
                 big: true,
                 dialTitle: 'Opening time',
-                // The dial reports minutes; with the default 60-minute step
-                // that is always a whole hour, and `open_hour`/`close_hour`
-                // are what the wire carries.
-                onChanged: (m) => setState(() => _open = m ~/ 60),
+                minuteStep: _minuteStep,
+                onChanged: (m) => setState(() => _open = m),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: TimeField(
                 label: 'Closes',
-                minutes: _close * 60,
+                minutes: _close,
                 big: true,
                 dialTitle: 'Closing time',
-                // The dial reports minutes; with the default 60-minute step
-                // that is always a whole hour, and `open_hour`/`close_hour`
-                // are what the wire carries.
-                onChanged: (m) => setState(() => _close = m ~/ 60),
+                minuteStep: _minuteStep,
+                onChanged: (m) => setState(() => _close = m),
               ),
             ),
           ],
         ),
         const SizedBox(height: 9),
         // Helper copy is elided in the README ("…open 16 hours.").
-        Text('Open $_openDuration hours.',
+        Text('Open $_openDuration.',
             style:
                 PrismType.microHelper.copyWith(color: palette.textSecondary)),
       ],

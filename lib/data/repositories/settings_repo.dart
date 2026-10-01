@@ -9,6 +9,17 @@ abstract class SettingsRepo {
   Stream<Guardrails> watchGuardrails();
   Future<void> updateGuardrails(Guardrails next);
 
+  /// Copy one zone's guardrails onto every zone in a venue (finding #10).
+  ///
+  /// Sequential per-zone writes rather than a new endpoint: the per-zone PUT
+  /// already exists and is already whole-object, and a venue has a handful of
+  /// zones. A bulk endpoint would be a second way to write the same row.
+  Future<void> applyGuardrailsToVenue(
+    String venueId,
+    List<String> zoneIds,
+    Guardrails guardrails,
+  );
+
   /// Emits when a guardrail write failed and the optimistic value was reverted.
   ///
   /// A stream rather than a thrown future. [updateGuardrails] is called from
@@ -23,7 +34,14 @@ abstract class SettingsRepo {
   Stream<Object> get guardrailFailures;
 
   Stream<OpenHours> watchOpenHours();
-  Future<void> setEverydayHours({required int openHour, required int closeHour});
+  /// Finding #18: the minutes are optional so an hour-only caller still
+  /// reads as o'clock, which is exactly what it used to mean.
+  Future<void> setEverydayHours({
+    required int openHour,
+    required int closeHour,
+    int openMinute = 0,
+    int closeMinute = 0,
+  });
   Future<void> addException(HoursException exception);
 
   /// S05-10 in edit mode. Sends the whole exception — the model has no

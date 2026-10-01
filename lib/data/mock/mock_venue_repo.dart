@@ -24,6 +24,10 @@ class MockVenueRepo implements VenueRepo {
           status: ZoneStatus.offline,
           moodId: 'peak',
           statusDetail: 'Offline',
+          // Null, not a date: this list is const, so it cannot hold a
+          // computed one. It exercises the "never reported" branch — the
+          // setup-problem case, which is the one a demo should show.
+          lastSeenAt: null,
         ),
       ],
     ),
@@ -112,6 +116,7 @@ class MockVenueRepo implements VenueRepo {
     required String name,
     required String address,
     required List<String> zoneNames,
+    bool allowDuplicateName = false,
     String? timezone,
     DeviceOffsets? deviceOffsets,
   }) async {
@@ -217,6 +222,36 @@ class MockVenueRepo implements VenueRepo {
         TimezoneOption(name: 'Australia/Sydney', utcOffsetMinutes: 600),
         TimezoneOption(name: 'Europe/London', utcOffsetMinutes: 60),
       ];
+
+  @override
+  Future<void> updateVenue(
+    String venueId, {
+    String? name,
+    String? address,
+    bool clearAddress = false,
+  }) async {
+    for (var i = 0; i < _venues.length; i++) {
+      if (_venues[i].id != venueId) continue;
+      final v = _venues[i];
+      _venues[i] = Venue(
+        id: v.id,
+        name: name ?? v.name,
+        zones: v.zones,
+        address: clearAddress ? null : (address ?? v.address),
+        hoursLabel: v.hoursLabel,
+        timezone: v.timezone,
+      );
+    }
+    _emit();
+  }
+
+  @override
+  Future<void> archiveVenue(String venueId) async {
+    // Soft in the real repo; here the row simply leaves the list, which is
+    // what archiving looks like from the screen's point of view.
+    _venues.removeWhere((v) => v.id == venueId);
+    _emit();
+  }
 
   @override
   Future<void> setTimezone(String venueId, String timezone) async {

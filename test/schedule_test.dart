@@ -7,8 +7,10 @@ import 'package:prism_venues/data/mock/mock_playback_repo.dart';
 import 'package:prism_venues/data/mock/mock_schedule_repo.dart';
 import 'package:prism_venues/data/models/schedule_entry.dart';
 import 'package:prism_venues/data/repositories/playback_repo.dart';
+import 'package:prism_venues/data/repositories/schedule_repo.dart';
 import 'package:prism_venues/main.dart';
 import 'package:prism_venues/shared/widgets/seg_toggle.dart';
+import 'package:prism_venues/features/schedule/starter_templates.dart';
 import 'package:prism_venues/features/schedule/week_grid.dart';
 import 'package:prism_venues/theme/palette.dart';
 import 'package:prism_venues/theme/theme.dart';
@@ -18,7 +20,13 @@ import 'package:prism_venues/shared/widgets/prism_bottom_sheet.dart';
 /// §2 S03 Schedule: self-drive ⇄ custom, week grid, add/edit/delete
 /// dayparts (all modals return to custom, §4).
 void main() {
-  Future<void> pumpSchedule(WidgetTester tester) async {
+  /// [scheduleRepo] replaces the seeded one, for the tests that need a week
+  /// with nothing in it — `Override` is not exported, so the seam is the
+  /// repository rather than a list of overrides.
+  Future<void> pumpSchedule(
+    WidgetTester tester, {
+    ScheduleRepo? scheduleRepo,
+  }) async {
     await tester.binding.setSurfaceSize(const Size(1024, 768));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final container = ProviderContainer(overrides: [
@@ -27,6 +35,8 @@ void main() {
         ref.onDispose(repo.dispose);
         return repo;
       }),
+      if (scheduleRepo != null)
+        scheduleRepoProvider.overrideWithValue(scheduleRepo),
     ]);
     addTearDown(container.dispose);
     await tester.pumpWidget(
@@ -38,6 +48,9 @@ void main() {
     await _settle(tester);
     await tester.enterText(
         find.byType(TextField).first, 'priya@marinacafe.com');
+    // Finding #21 refuses an empty password, as a person would be
+    // refused. The mocks accept any non-empty one.
+    await tester.enterText(find.byType(TextField).at(1), 'hunter22');
     await tester.tap(find.text('Sign in'));
     await _settle(tester);
     await tester.tap(find.text('Schedule'));
@@ -156,6 +169,9 @@ void main() {
     // rather than sitting underneath it.
     expect(find.text('Peak'), findsNWidgets(8));
     expect(find.text('Evening warmth'), findsNWidgets(6));
+    // Finding #14: a schedule save says it happened. The sheet used to close
+    // on a grid that might or might not have changed yet.
+    expect(find.text('Daypart added'), findsOneWidget);
   });
 
   testWidgets('adding to a forked week cannot be aimed at every week',
@@ -392,6 +408,209 @@ void main() {
 
     expect(find.text('Evening warmth'), findsNWidgets(7));
     expect(find.text('Replace what starts at 6:00 pm?'), findsNothing);
+  });
+
+  // --- Finding #11: building a week -----------------------------------------
+
+  testWidgets('one block can be added to several days at once', (tester) async {
+    // The finding's number is 35 saves for five blocks across seven days. The
+    // day chip widget already held a Set; the sheet was the thing insisting on
+    // one.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    await tester.tap(find.text('+ Add'));
+    await _settle(tester);
+
+    // First tap replaces the day the sheet guessed; the rest add to it.
+    for (final day in ['Tue', 'Wed', 'Thu']) {
+      await tester.tap(find.descendant(
+          of: find.byType(PrismBottomSheet), matching: find.text(day)));
+      await _settle(tester);
+    }
+
+    // The button says how many rows it is about to write, rather than being
+    // coy about it.
+    expect(find.text('Add to 3 days'), findsOneWidget);
+    await tester.tap(find.text('Add to 3 days'));
+    await _settle(tester);
+
+    // The seeded plan already has Evening warmth at 6pm on all seven days, so
+    // the three that clashed are offered as one question rather than three.
+    expect(find.textContaining('Replace'), findsWidgets);
+  });
+
+  testWidgets('picking one day is still one tap', (tester) async {
+    // The day the sheet opens on is a guess, so the first chip tap replaces it.
+    // Without that, choosing a single day would cost two taps — a tax on the
+    // common case to pay for the rarer one.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    await tester.tap(find.text('+ Add'));
+    await _settle(tester);
+    await tester.tap(find.descendant(
+        of: find.byType(PrismBottomSheet), matching: find.text('Sat')));
+    await _settle(tester);
+
+    expect(find.text('Add daypart'), findsOneWidget);
+    expect(find.text('Add to 2 days'), findsNothing);
+  });
+
+  testWidgets('tapping empty grid opens the sheet on that day and hour',
+      (tester) async {
+    // "+ Add" always opened on Monday at 6pm, so building a week meant
+    // correcting the day on every one of those 35 saves.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    // Sunday is the last of the seven rows; 3am is well left of the seeded
+    // blocks, so the tap lands on empty grid rather than on a daypart.
+    final grid = tester.getRect(find.byType(WeekGrid));
+    await tester.tapAt(Offset(
+      grid.left + 70,
+      grid.top + grid.height * (6.5 / 7),
+    ));
+    await _settle(tester);
+
+    // The sheet is open and the save writes one day, not seven.
+    expect(find.byType(PrismBottomSheet), findsOneWidget);
+    expect(find.text('Add daypart'), findsOneWidget);
+  });
+
+  testWidgets('a day can be copied onto other days', (tester) async {
+    // The other half of the 35: multi-select speeds up writing one block on
+    // several days, this speeds up repeating a day that already exists.
+    await pumpSchedule(tester);
+    await toCustom(tester);
+
+    await tester.tap(find.textContaining('Mon '));
+    await _settle(tester);
+
+    expect(find.textContaining('Copy Monday to'), findsOneWidget);
+    // The source day is inert rather than missing: a row of six chips with a
+    // moving gap in it is harder to read than seven with one that does not
+    // respond.
+    await tester.tap(find.descendant(
+        of: find.byType(PrismBottomSheet), matching: find.text('Mon')));
+    await _settle(tester);
+    expect(find.text('Copy'), findsOneWidget);
+
+    await tester.tap(find.descendant(
+        of: find.byType(PrismBottomSheet), matching: find.text('Sun')));
+    await _settle(tester);
+    expect(find.text('Copy to 1 day'), findsOneWidget);
+  });
+
+  testWidgets('an empty week offers a starter plan instead of a blank grid',
+      (tester) async {
+    // Where a new venue starts. An empty grid with six mood names nobody has
+    // heard is the hardest place in the app to begin.
+    final repo = MockScheduleRepo();
+    for (final daypart in await repo.watchWeekPlan(null).first) {
+      await repo.deleteDaypart(daypart.id);
+    }
+
+    await pumpSchedule(tester, scheduleRepo: repo);
+    await toCustom(tester);
+
+    expect(find.text('No plan yet'), findsOneWidget);
+    expect(find.text('Clinic'), findsOneWidget);
+    expect(find.text('Café'), findsOneWidget);
+    expect(find.text('Retail'), findsOneWidget);
+    // And the grid is not underneath it pretending the week is built.
+    expect(find.byType(WeekGrid), findsNothing);
+  });
+
+  testWidgets('tapping a starter plan replaces the picker with the grid',
+      (tester) async {
+    final repo = MockScheduleRepo();
+    for (final daypart in await repo.watchWeekPlan(null).first) {
+      await repo.deleteDaypart(daypart.id);
+    }
+
+    await pumpSchedule(tester, scheduleRepo: repo);
+    await toCustom(tester);
+
+    await tester.tap(find.text('Clinic'));
+    await _settle(tester);
+
+    expect(find.text('No plan yet'), findsNothing);
+    expect(find.byType(WeekGrid), findsOneWidget);
+    // Ordinary dayparts afterwards — nothing here is a mode or a special row.
+    final plan = await repo.watchWeekPlan(null).first;
+    expect(plan.map((d) => d.dayIndex).toSet(), {0, 1, 2, 3, 4});
+  });
+
+  testWidgets('a starter plan fills the week in one tap', (tester) async {
+    final repo = MockScheduleRepo();
+    for (final daypart in await repo.watchWeekPlan(null).first) {
+      await repo.deleteDaypart(daypart.id);
+    }
+
+    final cafe = starterTemplates.firstWhere((t) => t.id == 'cafe');
+    final clashed = await repo.addDayparts(cafe.toDayparts());
+
+    expect(clashed, isEmpty);
+    final plan = await repo.watchWeekPlan(null).first;
+    // Every day of the week is covered, which is the claim the card makes.
+    expect(plan.map((d) => d.dayIndex).toSet(), {0, 1, 2, 3, 4, 5, 6});
+    expect(plan.length, cafe.blocks.length);
+  });
+
+  test('a batch write reports the days it could not take, and writes the rest',
+      () async {
+    // Aborting at the first clash would make the fast path fail more often
+    // than the five separate saves it replaces: a manager laying one block
+    // across Mon–Fri usually has something on exactly one of those days.
+    final repo = MockScheduleRepo();
+    const block = Daypart(
+      id: '',
+      dayIndex: 0,
+      startHour: 18,
+      endHour: 20,
+      moodId: 'peak',
+    );
+
+    // 6pm is taken on every seeded day, so make room on two of them.
+    final plan = await repo.watchWeekPlan(null).first;
+    for (final d in plan.where((d) =>
+        (d.dayIndex == 1 || d.dayIndex == 2) && d.startHour == 18)) {
+      await repo.deleteDaypart(d.id);
+    }
+
+    final clashed = await repo.addDayparts([
+      for (var day = 0; day < 4; day++) block.copyWith(dayIndex: day),
+    ]);
+
+    expect(clashed, [0, 3]);
+    final after = await repo.watchWeekPlan(null).first;
+    expect(
+      after.where((d) => d.moodId == 'peak' && d.startHour == 18).length,
+      2,
+    );
+  });
+
+  test('replacing on a second pass takes only the days that clashed', () async {
+    final repo = MockScheduleRepo();
+    const block = Daypart(
+      id: '',
+      dayIndex: 0,
+      startHour: 18,
+      endHour: 20,
+      moodId: 'peak',
+    );
+
+    final clashed = await repo.addDayparts([block]);
+    expect(clashed, [0]);
+
+    expect(await repo.addDayparts([block], replace: true), isEmpty);
+    final after = await repo.watchWeekPlan(null).first;
+    // One block at 6pm on Monday, and it is the new one.
+    final monday6 =
+        after.where((d) => d.dayIndex == 0 && d.startHour == 18).toList();
+    expect(monday6.length, 1);
+    expect(monday6.single.moodId, 'peak');
   });
 
   testWidgets('H-08 a daypart that ends before it starts cannot be saved',

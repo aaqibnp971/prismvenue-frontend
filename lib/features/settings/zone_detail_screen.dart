@@ -18,6 +18,7 @@ import '../../theme/moods.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
 import 'confirm_remove_zone_dialog.dart';
+import 'widgets/recent_activity.dart';
 
 /// S05-5 "Zone detail — name, hours, player, vibe, volume, remove". The
 /// README gives this frame one line, so the form layout is derived: name
@@ -156,6 +157,12 @@ class _ZoneDetailScreenState extends ConsumerState<ZoneDetailScreen> {
                             value: guardrails.bandLabel,
                             chevron: false,
                           ),
+                          const SizedBox(height: 18),
+                          // Finding #15. Below the configuration rows and
+                          // above Remove: it explains the state the rows
+                          // describe, and it is the thing an owner opens this
+                          // screen for when something looks wrong.
+                          RecentActivity(zoneId: zoneId),
                           const SizedBox(height: 18),
                           GestureDetector(
                             onTap: () async {

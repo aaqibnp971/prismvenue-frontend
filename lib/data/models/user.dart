@@ -10,10 +10,17 @@ class User {
     required this.role,
     required this.initials,
     required this.avatarColor,
+    this.email,
   });
 
   final String id;
   final String name;
+
+  /// The address this account signs in with (finding #17).
+  ///
+  /// Null on an older server, or where it could not be read — the Account
+  /// section falls back to the display name rather than showing a blank.
+  final String? email;
   final Role role;
 
   /// Two-letter initials shown in the 32×32 avatar (11/800).

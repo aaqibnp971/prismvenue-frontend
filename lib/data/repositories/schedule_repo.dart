@@ -55,6 +55,26 @@ abstract class ScheduleRepo {
   /// [replace] is not a "force" flag for convenience: it is how the UI says the
   /// manager was shown what would be overwritten and agreed to it.
   Future<void> addDaypart(Daypart daypart, {bool replace = false});
+
+  /// Writes several dayparts and refreshes once. Finding #11.
+  ///
+  /// Returns the `dayIndex` of every one that was refused with
+  /// `daypart_slot_taken`, having written all the others. It does **not** stop
+  /// at the first clash, and that is the point: a manager putting one block
+  /// across Mon–Fri usually has an existing block on exactly one of those
+  /// days, and aborting the whole write for it would make the fast path fail
+  /// more often than the slow one it replaces.
+  ///
+  /// The caller asks about the refused days and calls again with [replace],
+  /// so nothing is ever overwritten without being shown first — the same
+  /// bargain `replace` strikes for a single write.
+  ///
+  /// Anything other than a slot clash throws, because a 403 or a dead network
+  /// partway through a batch is not a question to put to the manager.
+  Future<List<int>> addDayparts(
+    List<Daypart> dayparts, {
+    bool replace = false,
+  });
   Future<void> updateDaypart(Daypart daypart, {bool replace = false});
   Future<void> deleteDaypart(String id);
 }

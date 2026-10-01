@@ -46,6 +46,9 @@ void main() {
 
   Future<void> signIn(WidgetTester tester, String email) async {
     await tester.enterText(find.byType(TextField).first, email);
+    // Finding #21 refuses an empty password, as a person would be
+    // refused. The mocks accept any non-empty one.
+    await tester.enterText(find.byType(TextField).at(1), 'hunter22');
     await tester.tap(find.text('Sign in'));
     await _settle(tester);
   }
@@ -103,10 +106,19 @@ void main() {
         '/settings/volume',
         '/settings/transitions',
         '/settings/hours',
+        // Finding #15 put a "Recent activity" list on this one, whose rows are
+        // a sentence and a timestamp side by side — exactly the shape that
+        // overflows first on a narrow screen.
+        '/venues/zones/main-floor',
       ]) {
         await go(tester, route);
         await _settle(tester);
       }
+
+      // The last route in the list. Asserted rather than assumed: a route that
+      // silently redirected would pass this test by never rendering the thing
+      // it exists to measure.
+      expect(find.text('Recent activity'), findsOneWidget);
     });
   }
 }

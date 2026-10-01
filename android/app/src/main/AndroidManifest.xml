@@ -11,6 +11,15 @@
          reads as an app asking to dump system state. -->
     <uses-permission android:name="android.permission.DUMP" tools:node="remove"/>
 
+    <!-- Finding #1: the room must keep playing with the screen off. A
+         foreground service typed mediaPlayback is the AOSP contract for "do not
+         reclaim me to save battery"; POST_NOTIFICATIONS is required from 13
+         onwards for the notification the service must show. See
+         PLAYER_RELIABILITY.md T1.1. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <application
         android:label="prism_venues"
         android:name="${applicationName}"
@@ -37,6 +46,13 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Holds the process up while the screen is off. `exported=false`:
+             nothing outside the app has any business starting it. -->
+        <service
+            android:name=".PlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback"/>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

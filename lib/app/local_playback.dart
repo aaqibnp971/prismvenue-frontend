@@ -7,10 +7,17 @@
 /// wins over everything else because "nothing to fix remotely" is the more
 /// useful thing to tell someone.
 ///
-/// But **there is no telemetry ingest**. Nothing anywhere writes
-/// `devices.online` or any `reported_*` column, so that flag is frozen at
-/// whatever a seed happened to set. A zone with no `devices` row at all reads
-/// offline forever, by way of `coalesce(bool_or(online), false)`.
+/// This was written when **there was no telemetry ingest at all**: nothing
+/// anywhere wrote `devices.online` or any `reported_*` column, so the flag was
+/// frozen at whatever a seed happened to set, and a zone with no `devices` row
+/// read offline forever.
+///
+/// `last_seen_reporter.dart` now reports presence every 60 seconds, so the
+/// server can answer this for itself — within three minutes, and only for
+/// zones some tablet is actually reporting on. This correction still earns its
+/// place in the two gaps that leaves: the first minute after a room is opened,
+/// and any stretch where the reports are not landing but audio is still
+/// playing, which is precisely when a red "Offline" would be most wrong.
 ///
 /// Meanwhile this app IS the player: `engine_controller.dart` follows
 /// `nowPlayingProvider` and renders the mood through prism-core on this
@@ -174,6 +181,9 @@ Venue withLocalPlayback(Venue venue, LocalPlayback? local) {
           // amber row as its countdown text. `Zone.copyWith` preserves it for
           // any non-auto status, which is why this builds a Zone directly.
           statusDetail: null,
+          // Carried: when the server last heard from a device is true whatever
+          // this app can vouch for, and the zone screen still shows it.
+          lastSeenAt: zone.lastSeenAt,
         )
       else
         zone,

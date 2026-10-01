@@ -98,7 +98,17 @@ class HeroCard extends StatelessWidget {
     // quietly disappearing, so a room handed off half an hour ago read as
     // "Off schedule · you chose this vibe" beside a silent output meter, and
     // the honest conclusion was that the app was broken.
-    final pill = takeoverActive
+    // Closed outranks everything below it. When a venue is shut the room is
+    // silent for a reason nobody can act on from here, and saying "Prism is
+    // driving" beside a quiet room is the exact disagreement between dashboard
+    // and speakers this screen exists to prevent (finding #4).
+    final pill = state.closed
+        ? StatusPill(
+            text: state.opensLabel == null
+                ? 'Closed · the room is quiet until you open'
+                : 'Closed · back on at ${state.opensLabel}',
+            tone: PillTone.amber)
+        : takeoverActive
         ? const StatusPill(
             text: 'Staff have the room · Prism is handed off',
             tone: PillTone.amber)

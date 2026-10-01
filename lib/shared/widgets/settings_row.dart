@@ -64,9 +64,19 @@ class SettingsRow extends StatelessWidget {
             ),
             if (value != null) ...[
               const SizedBox(width: 10),
-              Text(value!,
-                  style: PrismType.label.copyWith(
-                      fontSize: 12.5, color: palette.textSecondary)),
+              // Flexible, not bare: a value is free text — an address, a
+              // venue name, an IANA zone — and an unconstrained Text in a Row
+              // paints the overflow stripes over the row on a narrow screen
+              // rather than shortening. Found by phone_layout_test when
+              // finding #8 put an address here.
+              Flexible(
+                child: Text(value!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                    style: PrismType.label.copyWith(
+                        fontSize: 12.5, color: palette.textSecondary)),
+              ),
             ],
             if (trailing != null) ...[
               const SizedBox(width: 10),

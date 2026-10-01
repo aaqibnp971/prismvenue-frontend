@@ -10,9 +10,11 @@ import '../../data/models/schedule_entry.dart';
 import '../../data/repositories/schedule_repo.dart';
 import '../../data/repositories/settings_repo.dart';
 import '../../shared/widgets/error_note.dart';
+import '../../shared/widgets/prism_toast.dart';
 import '../../theme/moods.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
+import 'copy_day_sheet.dart';
 import 'daypart_sheet.dart';
 
 /// The weekly plan as a time grid: seven day ROWS, hours running left to right.
@@ -123,12 +125,20 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
                 const SizedBox(height: _rulerHeight + 6),
                 for (var day = 0; day < 7; day++)
                   Expanded(
-                    child: Center(
-                      child: Text(
-                        '${_dayNames[day]} '
-                        '${widget.weekStart.add(Duration(days: day)).day}',
-                        style: PrismType.labelCaps
-                            .copyWith(color: palette.textSecondary),
+                    // Finding #11: the label is how a day gets copied onto
+                    // other days. A weekly plan is mostly the same few days
+                    // repeated, and rebuilding Tuesday block by block when
+                    // Monday already says it is the slowest thing in the app.
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _offerCopyDay(day),
+                      child: Center(
+                        child: Text(
+                          '${_dayNames[day]} '
+                          '${widget.weekStart.add(Duration(days: day)).day}',
+                          style: PrismType.labelCaps
+                              .copyWith(color: palette.textSecondary),
+                        ),
                       ),
                     ),
                   ),
@@ -163,6 +173,19 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
                                 span: _dayHours,
                                 pxPerHour: pxPerHour,
                                 rowHeight: rowHeight,
+                              ),
+                              // Finding #11: tapping empty grid adds there.
+                              // Under the blocks, so a tap on one still opens
+                              // it — the Stack's later children win.
+                              Positioned.fill(
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTapUp: (details) => _addAt(
+                                    details.localPosition,
+                                    pxPerHour,
+                                    rowHeight,
+                                  ),
+                                ),
                               ),
                               for (final daypart in widget.plan)
                                 _block(daypart, pxPerHour, rowHeight, palette),
@@ -409,6 +432,64 @@ class _WeekGridState extends ConsumerState<WeekGrid> {
       d.dayIndex == day &&
       start < d.endHour &&
       end > d.startHour);
+
+  /// Opens the add sheet on the day and hour that was tapped. Finding #11.
+  ///
+  /// Rounded DOWN to the hour rather than to the nearest: a tap at 13:50 means
+  /// "the afternoon", and a block that starts before the finger is easier to
+  /// read as "here" than one that starts after it.
+  void _addAt(Offset position, double pxPerHour, double rowHeight) {
+    final day = (position.dy ~/ rowHeight).clamp(0, 6).toInt();
+    final hour = (position.dx / pxPerHour).floor().clamp(0, _dayHours - 1);
+    showDaypartSheet(
+      context,
+      ref,
+      weekStart: widget.weekStart,
+      alreadyForked: widget.plan.isNotEmpty && widget.plan.first.weekStart != null,
+      dayIndex: day,
+      startMinutes: hour * 60,
+    );
+  }
+
+  /// "Copy Monday to…" — finding #11.
+  ///
+  /// A weekly plan is mostly one or two day shapes repeated, and building the
+  /// second one block by block is where the thirty-five saves came from.
+  Future<void> _offerCopyDay(int day) async {
+    final source = widget.plan.where((d) => d.dayIndex == day).toList();
+    final targets = await showCopyDaySheet(context, day: day, hasBlocks: source.isNotEmpty);
+    if (targets == null || targets.isEmpty || !mounted) return;
+
+    final repo = ref.read(scheduleRepoProvider);
+    try {
+      final clashed = await repo.addDayparts([
+        for (final target in targets)
+          for (final block in source) block.copyWith(dayIndex: target),
+      ]);
+      if (!mounted) return;
+      if (clashed.isEmpty) {
+        showPrismToast(context, '${_dayNames[day]} copied');
+        return;
+      }
+
+      // One question for the whole copy. Asking per block would be worse than
+      // the manual path it replaces.
+      final confirmed = await showReplaceOnCopyDialog(
+        context,
+        sourceDayName: _dayNames[day],
+        targetDayNames: clashed.toSet().map((d) => _dayNames[d]).join(', '),
+        blockCount: clashed.length,
+      );
+      if (confirmed != true) return;
+      await repo.addDayparts([
+        for (final target in targets)
+          for (final block in source) block.copyWith(dayIndex: target),
+      ], replace: true);
+      if (mounted) showPrismToast(context, '${_dayNames[day]} copied');
+    } catch (e) {
+      if (mounted) showPrismError(context, e);
+    }
+  }
 
   Future<void> _endDrag() async {
     final ghost = _ghost;

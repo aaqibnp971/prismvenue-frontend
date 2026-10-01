@@ -14,6 +14,8 @@ class Guardrails {
     this.volumeMin = 26,
     this.volumeMax = 70,
     this.quietHoursOn = true,
+    this.quietHoursStartMinutes = 22 * 60,
+    this.quietHoursCapPct = 55,
     this.floorLeeway = FloorLeeway.nudge10,
     this.transition = TransitionSmoothness.gentle,
     this.takeoverAccess = TakeoverAccess.managersPlusFloor,
@@ -27,6 +29,32 @@ class Guardrails {
 
   /// S05-2 quiet hours row: "After 10:00 pm · cap at 55%".
   final bool quietHoursOn;
+
+  /// When quiet hours start, minutes past midnight in the VENUE's clock.
+  ///
+  /// Finding #5: the row rendered "After 10:00 pm · cap at 55%" as a fixed
+  /// string — a frame sample value standing in for data the model had no field
+  /// for. The columns existed in the database the whole time; nothing carried
+  /// them, so the setting could be switched on but never changed, and never
+  /// reached the speakers.
+  final int quietHoursStartMinutes;
+
+  /// The ceiling quiet hours imposes, 0–100.
+  final int quietHoursCapPct;
+
+  /// "10:00 pm", for the settings row. Built here so the row and the value it
+  /// describes cannot drift.
+  String get quietHoursStartLabel {
+    final h24 = quietHoursStartMinutes ~/ 60;
+    final m = quietHoursStartMinutes % 60;
+    final h = h24 % 12 == 0 ? 12 : h24 % 12;
+    return '$h:${m.toString().padLeft(2, '0')} ${h24 < 12 ? 'am' : 'pm'}';
+  }
+
+  /// "After 10:00 pm · cap at 55%", or the off state.
+  String get quietHoursLabel => quietHoursOn
+      ? 'After $quietHoursStartLabel · cap at $quietHoursCapPct%'
+      : 'Off';
 
   final FloorLeeway floorLeeway;
   final TransitionSmoothness transition;
@@ -74,6 +102,8 @@ class Guardrails {
     int? volumeMin,
     int? volumeMax,
     bool? quietHoursOn,
+    int? quietHoursStartMinutes,
+    int? quietHoursCapPct,
     FloorLeeway? floorLeeway,
     TransitionSmoothness? transition,
     TakeoverAccess? takeoverAccess,
@@ -100,6 +130,8 @@ class HoursException {
     required this.days,
     required this.openHour,
     required this.closeHour,
+    this.openMinute = 0,
+    this.closeMinute = 0,
     this.closedAllDay = false,
     this.everyWeek = true,
   });
@@ -114,8 +146,16 @@ class HoursException {
   final Set<int> days;
   final int openHour;
   final int closeHour;
+
+  /// Minutes past the hour — finding #18. Read with the hour; neither means
+  /// anything alone. Defaulted to 0, which is what "7" always meant.
+  final int openMinute;
+  final int closeMinute;
   final bool closedAllDay;
   final bool everyWeek;
+
+  int get openMinutes => openHour * 60 + openMinute;
+  int get closeMinutes => closeHour * 60 + closeMinute;
 
   static const _dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -129,29 +169,57 @@ class OpenHours {
   const OpenHours({
     this.openHour = 7,
     this.closeHour = 23,
+    this.openMinute = 0,
+    this.closeMinute = 0,
     this.exceptions = const [],
   });
 
   final int openHour;
   final int closeHour;
+
+  /// Minutes past the hour — finding #18. A venue opening at 10:30 could not
+  /// say so, and rounding either way is wrong: early plays to an empty room,
+  /// late leaves the first half hour silent.
+  final int openMinute;
+  final int closeMinute;
   final List<HoursException> exceptions;
 
-  static String hourLabel(int h) {
+  int get openMinutes => openHour * 60 + openMinute;
+  int get closeMinutes => closeHour * 60 + closeMinute;
+
+  /// "7am", "10:30am". Mirrors `hourLabel` in the Deno backend and
+  /// `_hour_label` in FastAPI CHARACTER FOR CHARACTER — `hours_label` is
+  /// formatted server-side and rendered verbatim, so a difference here shows
+  /// up as two spellings of the same venue on two screens.
+  ///
+  /// ":00" is noise on the hour and the whole point off it, so it appears only
+  /// when there is something to say.
+  static String timeLabel(int h, [int m = 0]) {
     final h12 = h % 12 == 0 ? 12 : h % 12;
-    return '$h12${h < 12 ? 'am' : 'pm'}';
+    final mm = m == 0 ? '' : ':${m.toString().padLeft(2, '0')}';
+    return '$h12$mm${h < 12 ? 'am' : 'pm'}';
   }
 
+  /// Kept for the hour-only callers that have no minute to pass.
+  static String hourLabel(int h) => timeLabel(h);
+
   /// S05-1/S05-6 style "7am–11pm".
-  String get rangeLabel => '${hourLabel(openHour)}–${hourLabel(closeHour)}';
+  String get rangeLabel =>
+      '${timeLabel(openHour, openMinute)}–'
+      '${timeLabel(closeHour, closeMinute)}';
 
   OpenHours copyWith({
     int? openHour,
     int? closeHour,
+    int? openMinute,
+    int? closeMinute,
     List<HoursException>? exceptions,
   }) {
     return OpenHours(
       openHour: openHour ?? this.openHour,
       closeHour: closeHour ?? this.closeHour,
+      openMinute: openMinute ?? this.openMinute,
+      closeMinute: closeMinute ?? this.closeMinute,
       exceptions: exceptions ?? this.exceptions,
     );
   }

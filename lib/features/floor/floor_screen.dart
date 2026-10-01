@@ -11,6 +11,7 @@ import '../../data/repositories/weather_repo.dart';
 import '../../engine/engine_controller.dart';
 import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/error_state.dart';
+import '../../shared/widgets/prism_toast.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/schedule_rail.dart';
 import '../../theme/moods.dart';
@@ -132,8 +133,18 @@ class FloorScreen extends ConsumerWidget {
                           try {
                             if (state.paused) {
                               await repo.resume();
+                              // Finding #14: every mutation here is
+                              // fire-and-forget, so without a word from the
+                              // app there is nothing between "I pressed it"
+                              // and the stream catching up.
+                              if (context.mounted) {
+                                showPrismToast(context, 'Sent to the room');
+                              }
                             } else {
                               await repo.pause(by: user.name.split(' ').first);
+                              if (context.mounted) {
+                                showPrismToast(context, 'Room paused');
+                              }
                             }
                           } catch (e) {
                             // Without this the request fails and the room
@@ -180,6 +191,10 @@ class FloorScreen extends ConsumerWidget {
                                   await ref
                                       .read(playbackRepoProvider)
                                       .returnToAuto();
+                                  if (context.mounted) {
+                                    showPrismToast(
+                                        context, 'Back on Auto');
+                                  }
                                 } catch (e) {
                                   if (context.mounted) {
                                     showPrismError(context, e);
@@ -278,6 +293,12 @@ class FloorScreen extends ConsumerWidget {
     if (confirmed != true) return;
     try {
       await ref.read(playbackRepoProvider).setMood(mood.id);
+      // "Sent to the room", never "Playing": the zone-write contract is
+      // accepted-not-done, and claiming the second would be the same lie the
+      // status chips used to tell.
+      if (context.mounted) {
+        showPrismToast(context, 'Sent to the room · ${mood.name}');
+      }
     } catch (e) {
       if (context.mounted) showPrismError(context, e);
     }

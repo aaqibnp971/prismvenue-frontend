@@ -81,8 +81,12 @@ class _ExceptionSheetState extends State<_ExceptionSheet> {
   late final Set<int> _days = {...?widget.existing?.days} .isEmpty
       ? {4, 5}
       : {...widget.existing!.days};
-  late int _open = widget.existing?.openHour ?? 7;
-  late int _close = widget.existing?.closeHour ?? 1;
+  /// Minutes past midnight — finding #18.
+  late int _open = widget.existing?.openMinutes ?? 7 * 60;
+  late int _close = widget.existing?.closeMinutes ?? 1 * 60;
+
+  /// Matches the everyday-hours sheet and a daypart.
+  static const _minuteStep = 5;
   late bool _closedAllDay = widget.existing?.closedAllDay ?? false;
   late bool _everyWeek = widget.existing?.everyWeek ?? true;
 
@@ -101,8 +105,10 @@ class _ExceptionSheetState extends State<_ExceptionSheet> {
           : () => Navigator.of(context).pop(_Save(HoursException(
                 id: widget.existing?.id,
                 days: Set.of(_days),
-                openHour: _open,
-                closeHour: _close,
+                openHour: _open ~/ 60,
+                openMinute: _open % 60,
+                closeHour: _close ~/ 60,
+                closeMinute: _close % 60,
                 closedAllDay: _closedAllDay,
                 everyWeek: _everyWeek,
               ))),
@@ -126,24 +132,26 @@ class _ExceptionSheetState extends State<_ExceptionSheet> {
             Expanded(
               child: TimeField(
                 label: 'Opens',
-                minutes: _open * 60,
+                minutes: _open,
+                minuteStep: _minuteStep,
                 dialTitle: 'Opening time',
                 // The dial reports minutes; with the default 60-minute step
                 // that is always a whole hour, and `open_hour`/`close_hour`
                 // are what the wire carries.
-                onChanged: (m) => setState(() => _open = m ~/ 60),
+                onChanged: (m) => setState(() => _open = m),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: TimeField(
                 label: 'Closes',
-                minutes: _close * 60,
+                minutes: _close,
+                minuteStep: _minuteStep,
                 dialTitle: 'Closing time',
                 // The dial reports minutes; with the default 60-minute step
                 // that is always a whole hour, and `open_hour`/`close_hour`
                 // are what the wire carries.
-                onChanged: (m) => setState(() => _close = m ~/ 60),
+                onChanged: (m) => setState(() => _close = m),
               ),
             ),
           ],

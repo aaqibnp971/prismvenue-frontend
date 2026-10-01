@@ -1,4 +1,5 @@
 import '../models/session_context.dart';
+import '../api/api_exception.dart';
 import '../repositories/auth_repo.dart';
 import 'seed.dart';
 
@@ -62,6 +63,24 @@ class MockAuthRepo implements AuthRepo {
   /// that want a signed-in start call [signIn] through the real S00-1 screen.
   @override
   Future<AuthSession?> restoreSession() async => null;
+
+  @override
+  /// Any non-empty current password is accepted, except the literal "wrong",
+  /// which exists so the screen can be walked through its failure state
+  /// without a server.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    if (currentPassword == 'wrong') {
+      throw const ApiException(
+        statusCode: 422,
+        code: 'wrong_password',
+        message: 'That is not your current password.',
+        field: 'current_password',
+      );
+    }
+  }
 
   @override
   Future<void> signOut() async => _signedOut = true;

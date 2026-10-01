@@ -66,5 +66,15 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- Finding #1: without this the room stops the moment the iPad locks or
+	     staff switch apps, because iOS suspends the process. `audio` is what
+	     lets the AVAudioSession keep running in the background. It pairs with
+	     the `.playback` category set in AudioFocusWatcher.swift — the mode here
+	     is permission to continue, the category is the claim to the speakers,
+	     and either one alone leaves a silent room. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>

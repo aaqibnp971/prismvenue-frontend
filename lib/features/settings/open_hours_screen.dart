@@ -74,8 +74,8 @@ class OpenHoursScreen extends ConsumerWidget {
                         sub: exception.everyWeek ? 'Every week' : 'Just once',
                         value: exception.closedAllDay
                             ? 'Closed'
-                            : '${OpenHours.hourLabel(exception.openHour)}–'
-                                '${OpenHours.hourLabel(exception.closeHour)}',
+                            : '${OpenHours.timeLabel(exception.openHour, exception.openMinute)}–'
+                                '${OpenHours.timeLabel(exception.closeHour, exception.closeMinute)}',
                         // Tap to edit or delete. The chevron is what signals
                         // it is tappable at all — without it these rows read
                         // as permanent, which is exactly how they behaved.

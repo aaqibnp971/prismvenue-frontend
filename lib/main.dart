@@ -1,13 +1,17 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/env.dart';
+import 'app/last_seen_reporter.dart';
+import 'app/offline_plan_sync.dart';
 import 'app/theme_mode.dart';
 import 'app/router.dart';
 import 'app/session.dart';
 import 'data/api/api_auth_repo.dart';
+import 'data/api/api_last_seen_repo.dart';
 import 'data/api/api_playback_repo.dart';
 import 'data/api/api_schedule_repo.dart';
 import 'data/api/api_settings_repo.dart';
@@ -15,6 +19,7 @@ import 'data/api/api_venue_repo.dart';
 import 'data/api/open_meteo_weather_repo.dart';
 import 'data/api/providers.dart';
 import 'data/repositories/auth_repo.dart';
+import 'data/repositories/last_seen_repo.dart';
 import 'data/repositories/playback_repo.dart';
 import 'data/repositories/schedule_repo.dart';
 import 'data/repositories/settings_repo.dart';
@@ -52,6 +57,15 @@ ProviderContainer buildPrismContainer({
   if (Env.useMocks) return ProviderContainer(overrides: bootOverrides);
   return ProviderContainer(overrides: [
     ...bootOverrides,
+    lastSeenRepoProvider.overrideWith(
+      (ref) => ApiLastSeenRepo(
+        ref.watch(apiClientProvider),
+        appVersion: Env.appVersion.isEmpty ? null : Env.appVersion,
+        // `defaultTargetPlatform`, not `Platform.operatingSystem`: dart:io does
+        // not exist on web, and the app builds there.
+        platform: defaultTargetPlatform.name,
+      ),
+    ),
     authRepoProvider.overrideWith(
       (ref) => ApiAuthRepo(
         ref.watch(apiClientProvider),
@@ -87,6 +101,9 @@ ProviderContainer buildPrismContainer({
         ref.watch(apiClientProvider),
         ref.watch(apiScopeProvider),
         ref.watch(tokenStoreProvider),
+        // Finding #7: what the room falls back to when the venue's internet
+        // drops. Only the API wiring gets it — the mocks are never offline.
+        offlineCache: ref.watch(offlinePlanCacheProvider),
       );
       ref.onDispose(repo.dispose);
       return repo;
@@ -147,6 +164,16 @@ Future<void> _boot() async {
         .restore()
         .timeout(const Duration(seconds: 3), onTimeout: () {});
   }
+
+  // Start telling the server this tablet is here. From `_boot` rather than
+  // from a widget: it is a repeating timer for the life of the process, and a
+  // widget test that pumps the app should not inherit one.
+  container.read(lastSeenReporterProvider).start();
+
+  // Finding #7: keep a copy of the plan on the device while the connection is
+  // up, so a power cut or a dead router does not leave the room silent. Same
+  // reasoning as above for starting it here rather than from a provider read.
+  container.read(offlinePlanSyncProvider).start();
 
   runApp(UncontrolledProviderScope(
     container: container,

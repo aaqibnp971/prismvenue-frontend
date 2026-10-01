@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../data/api/api_exception.dart';
+import 'confirm_duplicate_venue_dialog.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -32,6 +34,10 @@ class _AddVenueScreenState extends ConsumerState<AddVenueScreen> {
   final _street = TextEditingController();
   final _city = TextEditingController();
   final _zones = <String>[];
+
+  /// Set once the owner has been shown the duplicate-name warning and said go
+  /// ahead. Reset nowhere: changing the name afterwards simply will not clash.
+  bool _allowDuplicateName = false;
 
   /// The clock this venue's schedule will run on.
   ///
@@ -104,6 +110,20 @@ class _AddVenueScreenState extends ConsumerState<AddVenueScreen> {
       return;
     }
 
+    // Finding #9: a venue was created with no zones, sat in the portfolio
+    // among the quiet healthy rows, and could not play anything — there was
+    // nothing for a mood, a schedule or a device to attach to. In the
+    // walkthrough "Test Clinic" was created exactly this way.
+    //
+    // Refused here rather than flagged afterwards: naming the first room is
+    // ten seconds at creation and a hunt through Settings later.
+    if (_zones.isEmpty) {
+      setState(() => _error =
+          'Add at least one zone — a venue with no rooms cannot play '
+          'anything.');
+      return;
+    }
+
     setState(() {
       _error = null;
       _saving = true;
@@ -124,8 +144,24 @@ class _AddVenueScreenState extends ConsumerState<AddVenueScreen> {
             // afterwards in Settings; the point is that it starts sane rather
             // than starting wrong and silent.
             deviceOffsets: DeviceOffsets.fromDevice(),
+            allowDuplicateName: _allowDuplicateName,
           );
-    } catch (e) {
+    } on ApiException catch (e) {
+      // Finding #20: the organisation already has a venue by this name. Not an
+      // error — a question. A chain really can have two branches with one
+      // name, so the server asks once and takes yes for an answer.
+      if (e.code == 'venue_name_taken' && mounted) {
+        setState(() => _saving = false);
+        final confirmed = await showConfirmDuplicateVenueDialog(
+          context,
+          venueName: name,
+        );
+        if (confirmed == true && mounted) {
+          _allowDuplicateName = true;
+          await _submit();
+        }
+        return;
+      }
       if (mounted) {
         setState(() {
           _error = messageFor(e);

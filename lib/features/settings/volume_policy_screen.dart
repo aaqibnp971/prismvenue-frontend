@@ -11,6 +11,7 @@ import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/seg_toggle.dart';
+import 'widgets/time_field.dart';
 import '../../shared/widgets/settings_row.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
@@ -107,7 +108,10 @@ class VolumePolicyScreen extends ConsumerWidget {
                     const SizedBox(height: 16),
                     SettingsRow(
                       title: 'Quiet hours',
-                      sub: 'After 10:00 pm · cap at 55%',
+                      // The real setting. This read "After 10:00 pm · cap at
+                      // 55%" for every venue on earth — a frame sample value
+                      // rendered as if it were live data (finding #5).
+                      sub: guardrails.quietHoursLabel,
                       chevron: false,
                       trailing: PrismToggle(
                         on: guardrails.quietHoursOn,
@@ -115,6 +119,31 @@ class VolumePolicyScreen extends ConsumerWidget {
                             guardrails.copyWith(quietHoursOn: on)),
                       ),
                     ),
+                    // Only while it is on: editing a cap that is not applied
+                    // is how the original defect felt from the outside.
+                    if (guardrails.quietHoursOn) ...[
+                      const SizedBox(height: 14),
+                      TimeField(
+                        label: 'Quiet from',
+                        minutes: guardrails.quietHoursStartMinutes,
+                        dialTitle: 'Quiet hours start',
+                        minuteStep: 15,
+                        onChanged: (m) => repo.updateGuardrails(
+                            guardrails.copyWith(quietHoursStartMinutes: m)),
+                      ),
+                      const SizedBox(height: 14),
+                      _SliderRow(
+                        label: 'Cap at',
+                        value: guardrails.quietHoursCapPct,
+                        // Never above the band's own ceiling: a quiet-hours
+                        // cap louder than the loudest the room may go is not
+                        // a cap at all.
+                        onChanged: (v) => repo.updateGuardrails(
+                            guardrails.copyWith(
+                                quietHoursCapPct:
+                                    v.clamp(0, guardrails.volumeMax))),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Text('Floor staff can',
                         style: PrismType.label

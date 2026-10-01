@@ -83,6 +83,24 @@ class ApiSettingsRepo implements SettingsRepo {
   /// never landed. (No screen awaits this today — a thrown error would be an
   /// unhandled async exception, not feedback.)
   @override
+  Future<void> applyGuardrailsToVenue(
+    String venueId,
+    List<String> zoneIds,
+    Guardrails guardrails,
+  ) async {
+    // Written straight through rather than via the debounced path: this is a
+    // deliberate one-shot action behind a confirmation, not a slider being
+    // dragged, and the caller wants to hear about a failure.
+    final body = _guardrailsToJson(guardrails);
+    for (final zoneId in zoneIds) {
+      await _client.put('/zones/$zoneId/guardrails', body: body);
+    }
+    // The current zone's own stream is stale now too — it may well have been
+    // one of the zones written above.
+    await _guardrails.refresh();
+  }
+
+  @override
   Future<void> updateGuardrails(Guardrails next) {
     _guardrails.emit(next);
     _pendingGuardrails = next;
@@ -185,10 +203,17 @@ class ApiSettingsRepo implements SettingsRepo {
   Future<void> setEverydayHours({
     required int openHour,
     required int closeHour,
+    int openMinute = 0,
+    int closeMinute = 0,
   }) async {
     await _client.put(
       '/venues/${_scope.requireVenue()}/open-hours',
-      body: {'open_hour': openHour, 'close_hour': closeHour},
+      body: {
+        'open_hour': openHour,
+        'close_hour': closeHour,
+        'open_minute': openMinute,
+        'close_minute': closeMinute,
+      },
     );
     await _openHours.refresh();
   }
@@ -221,6 +246,8 @@ class ApiSettingsRepo implements SettingsRepo {
         'days': e.days.toList()..sort(),
         'open_hour': e.openHour,
         'close_hour': e.closeHour,
+        'open_minute': e.openMinute,
+        'close_minute': e.closeMinute,
         'closed_all_day': e.closedAllDay,
         'every_week': e.everyWeek,
         // The sheet collects no label. Null means "leave it alone" on update —
@@ -234,6 +261,10 @@ class ApiSettingsRepo implements SettingsRepo {
     return OpenHours(
       openHour: json['open_hour'] as int,
       closeHour: json['close_hour'] as int,
+      // Absent from an older server; absent means o'clock, which is what
+      // every existing row meant before the columns existed.
+      openMinute: json['open_minute'] as int? ?? 0,
+      closeMinute: json['close_minute'] as int? ?? 0,
       exceptions: [
         for (final raw in (json['exceptions'] as List? ?? const []))
           _exceptionFromJson((raw as Map).cast<String, dynamic>()),
@@ -250,6 +281,8 @@ class ApiSettingsRepo implements SettingsRepo {
       days: {for (final d in (json['days'] as List? ?? const [])) d as int},
       openHour: json['open_hour'] as int? ?? 0,
       closeHour: json['close_hour'] as int? ?? 0,
+      openMinute: json['open_minute'] as int? ?? 0,
+      closeMinute: json['close_minute'] as int? ?? 0,
       closedAllDay: json['closed_all_day'] as bool? ?? false,
       everyWeek: json['every_week'] as bool? ?? true,
     );
@@ -273,6 +306,12 @@ class ApiSettingsRepo implements SettingsRepo {
       volumeMin: json['volume_min_pct'] as int? ?? 26,
       volumeMax: json['volume_max_pct'] as int? ?? 70,
       quietHoursOn: json['quiet_hours_on'] as bool? ?? true,
+      // "22:00" / "22:00:00" → minutes past midnight. Absent keeps the
+      // model's own default rather than dropping to midnight, which would
+      // read as "quiet all day" on a venue that had simply never set one.
+      quietHoursStartMinutes: _minutesFrom(json['quiet_hours_start_local']) ??
+          22 * 60,
+      quietHoursCapPct: json['quiet_hours_cap_pct'] as int? ?? 55,
       floorLeeway: switch (json['floor_leeway'] as String?) {
         'view_only' => FloorLeeway.viewOnly,
         'full_band' => FloorLeeway.fullBand,
@@ -307,6 +346,11 @@ class ApiSettingsRepo implements SettingsRepo {
       'volume_min_pct': g.volumeMin,
       'volume_max_pct': g.volumeMax,
       'quiet_hours_on': g.quietHoursOn,
+      // Sent now that the model carries them. Before this the PUT omitted
+      // both, the server coalesced them to their existing values, and an edit
+      // could not have persisted even if the UI had offered one.
+      'quiet_hours_start_local': _hhmm(g.quietHoursStartMinutes),
+      'quiet_hours_cap_pct': g.quietHoursCapPct,
       // quiet_hours_start_local / quiet_hours_cap_pct deliberately absent —
       // the model has no field for them and the server keeps what it has.
       'floor_leeway': switch (g.floorLeeway) {
@@ -389,4 +433,26 @@ class ApiSettingsRepo implements SettingsRepo {
     _guardrails.dispose();
     _openHours.dispose();
   }
+}
+
+/// "22:00" or "22:00:00" → minutes past midnight; null when absent or unparseable.
+///
+/// Postgres `time` comes back with seconds; the app only ever means hours and
+/// minutes, and a malformed value must not become midnight — that would read
+/// as "quiet all day" on a venue that never set one.
+int? _minutesFrom(Object? value) {
+  if (value is! String) return null;
+  final parts = value.split(':');
+  if (parts.length < 2) return null;
+  final h = int.tryParse(parts[0]);
+  final m = int.tryParse(parts[1]);
+  if (h == null || m == null || h > 23 || m > 59) return null;
+  return h * 60 + m;
+}
+
+/// Minutes past midnight → "22:00", the shape the column takes.
+String _hhmm(int minutes) {
+  final h = (minutes ~/ 60).toString().padLeft(2, '0');
+  final m = (minutes % 60).toString().padLeft(2, '0');
+  return '$h:$m';
 }

@@ -3,6 +3,7 @@ import 'dart:math';
 
 import '../models/playback_state.dart';
 import '../models/takeover_state.dart';
+import '../models/zone_activity.dart';
 import '../repositories/playback_repo.dart';
 
 /// In-memory playback seeded with the README's Marina Café example:
@@ -16,6 +17,13 @@ import '../repositories/playback_repo.dart';
 /// rooms — and became actively misleading the moment "Open floor" started
 /// working on every zone, since every venue then appeared to play whatever was
 /// set last. A mock that cannot express independence documents the wrong shape.
+/// What the mocks answer for "which installation is this?".
+///
+/// Real builds read a generated id out of local storage; on mocks there is one
+/// device by definition, so a constant keeps `--dart-define=PRISM_USE_MOCKS`
+/// able to exercise the claim without touching storage.
+const mockInstallationId = '00000000-0000-4000-8000-000000000001';
+
 class MockPlaybackRepo implements PlaybackRepo {
   MockPlaybackRepo({this.tickNoise = true, String? Function()? zoneId})
       : _zoneId = zoneId ?? (() => null);
@@ -104,6 +112,26 @@ class MockPlaybackRepo implements PlaybackRepo {
   @override
   Future<void> resume() async {
     _emit(_state.copyWith(paused: false));
+  }
+
+  /// On mocks this device is always the player once it claims, and nobody
+  /// otherwise — there is no second device to race with.
+  ///
+  /// Built rather than copied: `copyWith` treats null as "unchanged", so it
+  /// cannot express releasing the room, which is half of what this does.
+  @override
+  Future<String?> setThisDevicePlays(bool play) async {
+    final holder = play ? mockInstallationId : null;
+    _emit(PlaybackState(
+      moodId: _state.moodId,
+      paused: _state.paused,
+      pausedBy: _state.pausedBy,
+      contextLine: _state.contextLine,
+      offSchedule: _state.offSchedule,
+      playerInstallationId: holder,
+      playsHere: play,
+    ));
+    return holder;
   }
 
   // ---- Takeover (§2 S02) ----
@@ -198,6 +226,37 @@ class MockPlaybackRepo implements PlaybackRepo {
           hasAutoReturn: false,
           remaining: Duration.zero,
         ));
+  }
+
+  /// Finding #15. Seeded with a plausible afternoon rather than left empty:
+  /// the panel's whole point is what it looks like with something in it, and
+  /// an empty list would make every screenshot and every test agree that the
+  /// feature does nothing.
+  @override
+  Future<List<ZoneActivityEntry>> activityFor(String zoneId) async {
+    final now = DateTime.now();
+    return [
+      ZoneActivityEntry(
+        id: 'act-1',
+        at: now.subtract(const Duration(minutes: 8)),
+        line: 'Priya paused the room',
+        actorName: 'Priya',
+      ),
+      ZoneActivityEntry(
+        id: 'act-2',
+        at: now.subtract(const Duration(hours: 2)),
+        line: 'Priya switched to Peak',
+        actorName: 'Priya',
+        moodId: 'peak',
+      ),
+      ZoneActivityEntry(
+        id: 'act-3',
+        at: now.subtract(const Duration(hours: 5)),
+        line: 'Prism switched to Afternoon lift',
+        byPrism: true,
+        moodId: 'afternoon-lift',
+      ),
+    ];
   }
 
   @override

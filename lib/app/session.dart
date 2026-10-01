@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/api/providers.dart';
 import '../data/models/session_context.dart';
 import '../data/models/user.dart';
 import '../data/repositories/auth_repo.dart';
@@ -183,6 +184,10 @@ class AuthController {
     // [readStoredOperatedZone] should be a backstop rather than the only thing
     // standing between them and someone else's room.
     await _clearPersisted();
+    // Finding #7's cache holds what a room was playing and when it opens. On a
+    // shared venue iPad that is no more the next person's business than the
+    // room they were operating, so it goes out with the same broom.
+    await _ref.read(offlinePlanCacheProvider).clear();
     await _ref.read(authRepoProvider).signOut();
   }
 

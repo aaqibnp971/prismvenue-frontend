@@ -4,6 +4,7 @@ import '../../app/env.dart';
 import '../../app/session.dart';
 import 'api_client.dart';
 import 'api_scope.dart';
+import 'offline_plan_cache.dart';
 import 'token_store.dart';
 
 /// Where the session token is persisted. Overridden with
@@ -40,3 +41,11 @@ final apiScopeProvider = Provider<ApiScope>((ref) => ApiScope(
       venueId: () => ref.read(currentVenueIdProvider),
       userId: () => ref.read(sessionProvider)?.id,
     ));
+
+/// The device's copy of the plan — finding #7.
+///
+/// One instance for the whole app: [OfflinePlanSync] writes it, the API
+/// playback repository reads it, and both must see the same memory or the
+/// first outage after a write would still hit the disk.
+final offlinePlanCacheProvider =
+    Provider<OfflinePlanCache>((ref) => OfflinePlanCache());

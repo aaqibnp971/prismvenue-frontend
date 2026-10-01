@@ -38,6 +38,26 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
 
   Future<void> _signIn() async {
     if (_busy) return; // a double tap must not mean two sign-in attempts
+
+    // Finding #21: an empty field went to the server, which answered with the
+    // deliberately vague "That email or password is not right" — correct for a
+    // wrong password and useless for a blank box. The device can see this
+    // without asking anyone, and it costs a round trip to get a worse answer.
+    //
+    // Deliberately not validating the shape of the address. "That is not a
+    // valid email" on an address the server would have accepted is a worse
+    // failure than one wasted request, and the field is `TextInputType
+    // .emailAddress` already.
+    final email = _email.text.trim();
+    if (email.isEmpty || _password.text.isEmpty) {
+      setState(() => _error = email.isEmpty && _password.text.isEmpty
+          ? 'Enter your email and password.'
+          : email.isEmpty
+              ? 'Enter your email.'
+              : 'Enter your password.');
+      return;
+    }
+
     setState(() {
       _busy = true;
       _error = null;
@@ -45,7 +65,7 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     try {
       await ref
           .read(authControllerProvider)
-          .signIn(_email.text.trim(), _password.text);
+          .signIn(email, _password.text);
       // The router redirect lands floor/manager on /floor, owner on /venues.
     } catch (e) {
       if (mounted) setState(() => _error = messageFor(e));

@@ -86,6 +86,17 @@ class ApiAuthRepo implements AuthRepo {
   }
 
   @override
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _client.post('/auth/change-password', body: {
+      'current_password': currentPassword,
+      'new_password': newPassword,
+    });
+  }
+
+  @override
   Future<void> signOut() => _tokens.clear();
 
   AuthSession _sessionFrom(Map<String, dynamic> json) {
@@ -96,7 +107,8 @@ class ApiAuthRepo implements AuthRepo {
         name: user['name'] as String,
         role: _roleFrom(user['role'] as String),
         initials: user['initials'] as String,
-        avatarColor: _colorFrom(user['avatar_color'] as String?),
+        email: json['email'] as String?,
+      avatarColor: _colorFrom(user['avatar_color'] as String?),
       ),
       context: SessionContext.fromJson(
         (json['context'] as Map?)?.cast<String, dynamic>() ?? const {},

@@ -9,6 +9,7 @@ import '../../app/venue_header.dart';
 import '../../data/models/guardrails.dart';
 import '../../data/models/timezone.dart';
 import '../../data/models/venue.dart';
+import '../../data/repositories/playback_repo.dart';
 import '../../data/repositories/settings_repo.dart';
 import '../../data/repositories/venue_repo.dart';
 import '../../app/theme_mode.dart';
@@ -16,6 +17,12 @@ import '../../shared/widgets/prism_dropdown_menu.dart';
 import '../../shared/widgets/error_note.dart';
 import '../../shared/widgets/prism_top_bar.dart';
 import '../../shared/widgets/settings_row.dart';
+import 'confirm_apply_to_all_dialog.dart';
+import 'zone_picker_sheet.dart';
+import 'change_password_sheet.dart';
+import '../../shared/widgets/prism_toast.dart';
+import 'venue_text_sheet.dart';
+import 'confirm_remove_venue_dialog.dart';
 import '../../theme/palette.dart';
 import '../../theme/typography.dart';
 import 'timezone_sheet.dart';
@@ -99,6 +106,38 @@ class SettingsScreen extends ConsumerWidget {
                     ],
                   ),
                   _Group(
+                    icon: LucideIcons.speaker,
+                    label: 'THIS ZONE',
+                    children: [
+                      SettingsRow(
+                        title: 'Settings apply to',
+                        // Finding #10: the page is headed with the venue name,
+                        // and the volume band, transitions and takeover access
+                        // are all stored per zone. An owner changed the band
+                        // believing it covered the venue. The chip said "This
+                        // zone" without ever naming which.
+                        value: ref.watch(sessionContextProvider)?.zoneName ?? 'No zone',
+                        onTap: venue == null || venue.zones.length < 2
+                            ? null
+                            : () => _switchZone(context, ref, venue),
+                      ),
+                      if (venue != null && venue.zones.length > 1)
+                        SettingsRow(
+                          title: 'Apply to all zones',
+                          value: '${venue.zones.length} zones',
+                          onTap: () =>
+                              _applyToAllZones(context, ref, venue, guardrails),
+                        ),
+                    ],
+                  ),
+                  _Group(
+                    icon: LucideIcons.volume2,
+                    label: 'THIS DEVICE',
+                    children: [
+                      _PlaysHereRow(zoneName: header.subtitle),
+                    ],
+                  ),
+                  _Group(
                     icon: LucideIcons.lock,
                     label: 'ACCESS',
                     children: [
@@ -120,6 +159,47 @@ class SettingsScreen extends ConsumerWidget {
                     ],
                   ),
                   _Group(
+                    icon: LucideIcons.userRound,
+                    label: 'ACCOUNT',
+                    children: [
+                      // Finding #17: the avatar menu offered only Sign out, so
+                      // a member of staff could not see which account they
+                      // were on, and could only change a password by
+                      // pretending to have forgotten it.
+                      SettingsRow(
+                        title: 'Signed in as',
+                        value: user.email ?? user.name,
+                        chevron: false,
+                      ),
+                      SettingsRow(
+                        title: 'Role',
+                        value: switch (user.role) {
+                          Role.owner => 'Owner',
+                          Role.manager => 'Manager',
+                          Role.floor => 'Floor',
+                        },
+                        chevron: false,
+                      ),
+                      SettingsRow(
+                        title: 'Change password',
+                        value: '',
+                        onTap: () async {
+                          final changed = await showChangePasswordSheet(context);
+                          if (changed == true && context.mounted) {
+                            showPrismToast(context, 'Password changed');
+                          }
+                        },
+                      ),
+                      // Sign out deliberately NOT repeated here. The
+                      // avatar menu already owns it, and on a narrow screen it
+                      // is the only route to it — two controls for one action
+                      // is the thing CLAUDE.md names as a bug, and the report
+                      // asked for this section because email, role and a
+                      // password change had nowhere to live, not because
+                      // signing out was hard to find.
+                    ],
+                  ),
+                  _Group(
                     icon: LucideIcons.mapPin,
                     label: 'PLACE',
                     children: [
@@ -134,6 +214,39 @@ class SettingsScreen extends ConsumerWidget {
                             ? '—'
                             : '${venue.zones.length} · ${hours.rangeLabel}',
                         onTap: () => context.go('/settings/hours'),
+                      ),
+                      SettingsRow(
+                        title: 'Venue name',
+                        // Finding #8: there was no way to fix a typo in a
+                        // venue's name, ever. The write path existed for zones
+                        // and not for the venue they sit in.
+                        value: venue?.name ?? '—',
+                        onTap: venueId == null || venue == null
+                            ? null
+                            : () => _editVenueText(
+                                  context,
+                                  ref,
+                                  venueId: venueId,
+                                  title: 'Venue name',
+                                  initial: venue.name,
+                                  isName: true,
+                                ),
+                      ),
+                      SettingsRow(
+                        title: 'Address',
+                        value: (venue?.address?.isNotEmpty ?? false)
+                            ? venue!.address!
+                            : 'Not set',
+                        onTap: venueId == null || venue == null
+                            ? null
+                            : () => _editVenueText(
+                                  context,
+                                  ref,
+                                  venueId: venueId,
+                                  title: 'Address',
+                                  initial: venue.address ?? '',
+                                  isName: false,
+                                ),
                       ),
                       SettingsRow(
                         title: 'Time zone',
@@ -164,6 +277,19 @@ class SettingsScreen extends ConsumerWidget {
                             ? null
                             : () => _pickTimezone(context, ref, venueId, venue),
                       ),
+                      // Owners only, and last in the group: it is the one row
+                      // here that removes something. Test venues like "0000"
+                      // and "Test_Venue" had no way out of a live portfolio
+                      // before this.
+                      if (user.role == Role.owner)
+                        SettingsRow(
+                          title: 'Remove this venue',
+                          value: '',
+                          onTap: venueId == null || venue == null
+                              ? null
+                              : () =>
+                                  _archiveVenue(context, ref, venueId, venue),
+                        ),
                     ],
                   ),
                   _Group(
@@ -404,4 +530,168 @@ Future<int?> _showAnchoredDropdown(
       ],
     ),
   );
+}
+
+/// "This device plays Main floor" — finding #2.
+///
+/// The engine used to sound wherever somebody was signed in, so an owner
+/// opening the app at home started their clinic's music on their phone, and
+/// two iPads in one room played over each other a few hundred milliseconds
+/// apart. One device holds a room; everything else is a remote control.
+///
+/// **Off by default, deliberately.** A device must never begin driving a room
+/// because somebody signed in on it. The cost is that a freshly installed
+/// venue plays nowhere until somebody says which tablet is the speaker, so the
+/// row states that in as many words rather than sitting quietly on "Off".
+///
+/// It lives in Settings rather than on Floor because it is a property of this
+/// installation, set once when a tablet is mounted, and not something anybody
+/// should be flipping mid-service.
+class _PlaysHereRow extends ConsumerWidget {
+  const _PlaysHereRow({required this.zoneName});
+
+  final String zoneName;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final now = ref.watch(nowPlayingProvider).value;
+    final playsHere = now?.playsHere ?? false;
+    final someoneElse = !playsHere && now?.playerInstallationId != null;
+
+    return SettingsRow(
+      title: 'This device plays $zoneName',
+      // Three states, not two. "Another device is playing it" and "nothing is"
+      // need different actions from whoever is reading.
+      value: playsHere
+          ? 'On'
+          : someoneElse
+              ? 'Another device'
+              : 'No device is playing',
+      onTap: () async {
+        try {
+          await ref.read(playbackRepoProvider).setThisDevicePlays(!playsHere);
+        } catch (e) {
+          if (context.mounted) showPrismError(context, e);
+        }
+      },
+    );
+  }
+}
+
+
+/// Edit a venue's name or address (finding #8).
+///
+/// One helper for both: they differ in whether empty is allowed and in the
+/// helper line, and two near-identical paths would drift.
+Future<void> _editVenueText(
+  BuildContext context,
+  WidgetRef ref, {
+  required String venueId,
+  required String title,
+  required String initial,
+  required bool isName,
+}) async {
+  final value = await showVenueTextSheet(
+    context,
+    title: title,
+    label: title,
+    initial: initial,
+    // A venue with no address is legitimate; a venue with no name is not.
+    allowEmpty: !isName,
+    helper: isName
+        ? null
+        : "Used to find the venue's weather, which colours the sound.",
+  );
+  if (value == null || !context.mounted) return;
+
+  try {
+    await ref.read(venueRepoProvider).updateVenue(
+          venueId,
+          name: isName ? value : null,
+          address: isName || value.isEmpty ? null : value,
+          // An empty address is a deliberate clear, not an omission.
+          clearAddress: !isName && value.isEmpty,
+        );
+    if (context.mounted) showPrismToast(context, 'Saved');
+  } catch (e) {
+    if (context.mounted) showPrismError(context, e);
+  }
+}
+
+/// Archive a venue, after asking.
+Future<void> _archiveVenue(
+  BuildContext context,
+  WidgetRef ref,
+  String venueId,
+  Venue venue,
+) async {
+  final confirmed =
+      await showConfirmRemoveVenueDialog(context, venueName: venue.name);
+  if (confirmed != true || !context.mounted) return;
+
+  try {
+    await ref.read(venueRepoProvider).archiveVenue(venueId);
+    if (context.mounted) {
+      showPrismToast(context, '${venue.name} removed');
+      // Settings is scoped to a venue that no longer exists, so staying here
+      // would show a screen about nothing.
+      context.go('/venues');
+    }
+  } catch (e) {
+    if (context.mounted) showPrismError(context, e);
+  }
+}
+
+
+/// Move Settings (and Floor, and Schedule) to another room — finding #10.
+///
+/// Reuses `operateZone`, the one control in the app that changes which room is
+/// being operated, rather than inventing a settings-only notion of "current
+/// zone" that the rest of the app would not share.
+Future<void> _switchZone(
+  BuildContext context,
+  WidgetRef ref,
+  Venue venue,
+) async {
+  final picked = await showZonePickerSheet(context, venue: venue);
+  if (picked == null || !context.mounted) return;
+
+  ref.read(sessionContextProvider.notifier).operateZone(
+        venueId: venue.id,
+        venueName: venue.name,
+        zoneId: picked.id,
+        zoneName: picked.name,
+      );
+  if (context.mounted) showPrismToast(context, 'Now showing ${picked.name}');
+}
+
+/// Copy this zone's guardrails to every other room in the venue — finding #10.
+///
+/// Asks first and names the count, because it is the one control here that
+/// changes rooms the person is not looking at.
+Future<void> _applyToAllZones(
+  BuildContext context,
+  WidgetRef ref,
+  Venue venue,
+  Guardrails guardrails,
+) async {
+  final confirmed = await showConfirmApplyToAllDialog(
+    context,
+    zoneCount: venue.zones.length,
+    venueName: venue.name,
+  );
+  if (confirmed != true || !context.mounted) return;
+
+  try {
+    await ref.read(settingsRepoProvider).applyGuardrailsToVenue(
+          venue.id,
+          [for (final z in venue.zones) z.id],
+          guardrails,
+        );
+    if (context.mounted) {
+      showPrismToast(context, 'Applied to ${venue.zones.length} zones');
+    }
+  } catch (e) {
+    if (context.mounted) showPrismError(context, e);
+  }
 }

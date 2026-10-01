@@ -31,7 +31,9 @@ import '../data/models/weather.dart';
 import '../data/repositories/playback_repo.dart';
 import '../data/repositories/settings_repo.dart';
 import '../data/repositories/weather_repo.dart';
+import '../theme/moods.dart';
 import 'audio_focus.dart';
+import 'playback_service.dart';
 import 'prism_engine.dart';
 import 'weather_influence.dart';
 
@@ -106,9 +108,31 @@ class EngineController {
 
   bool _started = false;
 
+  /// Set in [dispose]. Every `_ref.read` below happens after an `await`, and a
+  /// Ref used after its provider is gone throws — so a sync still in flight
+  /// when the container goes down must stop rather than reach for state that
+  /// no longer exists.
+  bool _disposed = false;
+
   // The four independent reasons the room may be silent. See _syncAudible.
   bool _takeoverActive = false;
   bool _paused = false;
+  /// Finding #2: whether THIS device is the room's claimed player.
+  ///
+  /// Starts false. A device must never begin driving a room merely because
+  /// somebody signed in on it — that is the whole defect. It turns true only
+  /// when now-playing says this installation holds the room.
+  bool _playsHere = false;
+
+  /// Finding #4: the venue is shut. A room outside its open hours must be
+  /// silent whatever the plan says — the scheduler holds the last mood through
+  /// gaps, which is right between dayparts and wrong at closing time.
+  bool _closed = false;
+
+  /// Finding #5: the ceiling quiet hours imposes right now, or null outside
+  /// them. Taken as the LOWER of this and the band's own ceiling — an owner
+  /// who set a quiet cap of 55% meant "no louder than 55", not "55".
+  int? _quietCap;
   bool _externalAudio = false;
 
   PrismEngine get _engine => _ref.read(prismEngineProvider);
@@ -203,7 +227,12 @@ class EngineController {
   Future<void> _applyCeiling(Guardrails? guardrails) async {
     if (!_signedIn) return;
     if (guardrails == null && _appliedVolumeMax != null) return;
-    final ceiling = (guardrails ?? const Guardrails()).volumeMax;
+    final band = (guardrails ?? const Guardrails()).volumeMax;
+    // Finding #5: the lower of the two wins. A quiet-hours cap of 55% means
+    // "no louder than 55 tonight", not "55 regardless" — a room whose band
+    // already tops out at 40 must not get louder when quiet hours begin.
+    final quiet = _quietCap;
+    final ceiling = quiet == null ? band : (quiet < band ? quiet : band);
     if (ceiling == _appliedVolumeMax) return;
     _appliedVolumeMax = ceiling;
     await _engine.setVolumePolicy(ceiling);
@@ -277,6 +306,14 @@ class EngineController {
     );
 
     _paused = state.paused;
+    _playsHere = state.playsHere;
+    _closed = state.closed;
+    if (_quietCap != state.quietCapPct) {
+      _quietCap = state.quietCapPct;
+      // Re-apply at once rather than at the next mood change: 10pm arrives
+      // while a room is already playing, and that is the whole point.
+      await _applyCeiling(_ref.read(guardrailsProvider).value);
+    }
     await _syncAudible();
   }
 
@@ -320,7 +357,13 @@ class EngineController {
     // See app/local_playback.dart.
     Future<void> quiet() async {
       await _engine.silence();
+      if (_disposed) return;
       _ref.read(playedZonesProvider.notifier).clear();
+      // Finding #1: every route to a silent room passes through here, so the
+      // foreground service is torn down in one place. Leaving it up would keep
+      // a "Prism is playing" notification on a tablet that is not, and hold
+      // the screen awake all night for nothing.
+      await stopForegroundPlayback();
     }
 
     if (!_wanted) {
@@ -353,7 +396,12 @@ class EngineController {
     // guardrails and now-playing fetches race, and resuming first would let a
     // room play a moment at the previous zone's ceiling.
     await _applyCeiling(_ref.read(guardrailsProvider).value);
+    // Finding #1: before resuming, not after. The service is what stops
+    // Android reclaiming the process once the screen goes off, and asking for
+    // it after the audio starts leaves a window where a lock would kill it.
+    await startForegroundPlayback(text: _foregroundText());
     await _engine.resume();
+    if (_disposed) return;
     // Recorded only once the room is actually being driven — a mood set while
     // paused or taken over proves nothing about reachability.
     final zoneId = _ref.read(currentZoneIdProvider);
@@ -362,15 +410,34 @@ class EngineController {
     }
   }
 
-  /// Whether the room is *meant* to be playing.
+  /// What the "Prism is playing" notification says under its title.
   ///
-  /// Separate from whether it can be. The first three reasons are ours to
+  /// The mood, when one is known. It is the only thing a member of staff can
+  /// read off a locked tablet to tell whether the room is doing what they
+  /// expect, and it costs nothing to put there.
+  String? _foregroundText() {
+    final zone = _ref.read(sessionContextProvider)?.zoneName;
+    final mood = _ref.read(nowPlayingProvider).value?.moodId;
+    final name = mood == null ? null : moodById(mood).name;
+    if (zone == null && name == null) return null;
+    if (name == null) return zone;
+    return zone == null ? name : '$zone · $name';
+  }
+
+  /// Whether the room is *meant* to be playing, **on this device**.
+  ///
+  /// Separate from whether it can be. The first four reasons are ours to
   /// decide; external audio and a refused focus request are the platform's
   /// answer to "may I", and asking that question requires having decided the
   /// first part already.
-  bool get _wanted => _signedIn && !_paused && !_takeoverActive;
+  ///
+  /// `_playsHere` is the newest and the least obvious: a signed-in phone in an
+  /// owner's kitchen is a remote control, not a speaker.
+  bool get _wanted =>
+      _signedIn && !_paused && !_takeoverActive && _playsHere && !_closed;
 
   void dispose() {
+    _disposed = true;
     for (final s in _subscriptions) {
       s.close();
     }

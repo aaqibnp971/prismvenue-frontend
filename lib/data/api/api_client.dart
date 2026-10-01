@@ -48,8 +48,13 @@ class ApiClient {
 
   Future<dynamic> get(String path) => _send('GET', path);
 
-  Future<dynamic> post(String path, {Object? body}) =>
-      _send('POST', path, body: body, idempotent: true);
+  /// `keyed: false` omits the `Idempotency-Key`.
+  ///
+  /// Only for a POST that is last-write-wins and high-frequency — the zone
+  /// last-seen report. Everything else wants the key: it is what tells the
+  /// server "this is the same pause, not a second one" across a token refresh.
+  Future<dynamic> post(String path, {Object? body, bool keyed = true}) =>
+      _send('POST', path, body: body, idempotent: keyed);
 
   Future<dynamic> put(String path, {Object? body}) =>
       _send('PUT', path, body: body);

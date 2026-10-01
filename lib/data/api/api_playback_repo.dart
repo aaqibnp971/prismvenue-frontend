@@ -5,9 +5,13 @@ import 'package:http/http.dart' as http;
 
 import '../models/playback_state.dart';
 import '../models/takeover_state.dart';
+import '../models/zone_activity.dart';
 import '../repositories/playback_repo.dart';
 import 'api_client.dart';
+import 'api_exception.dart';
 import 'api_scope.dart';
+import 'offline_plan_cache.dart';
+import 'installation_id.dart';
 import 'token_store.dart';
 import 'watchable.dart';
 
@@ -30,13 +34,24 @@ import 'watchable.dart';
 /// back to polling rather than going silent — a Floor screen that quietly stops
 /// updating is worse than one that updates slowly.
 class ApiPlaybackRepo implements PlaybackRepo {
-  ApiPlaybackRepo(this._client, this._scope, this._tokens, {http.Client? sseClient})
-      : _sse = sseClient ?? http.Client();
+  ApiPlaybackRepo(
+    this._client,
+    this._scope,
+    this._tokens, {
+    http.Client? sseClient,
+    OfflinePlanCache? offlineCache,
+  })  : _sse = sseClient ?? http.Client(),
+        _offline = offlineCache;
 
   final ApiClient _client;
   final ApiScope _scope;
   final TokenStore _tokens;
   final http.Client _sse;
+
+  /// The device's own copy of the plan — finding #7. Null in the tests and
+  /// wirings that predate it, where the repository behaves exactly as it did:
+  /// an unreachable server is an error, not a room that keeps playing.
+  final OfflinePlanCache? _offline;
 
   late final _now = Watchable<PlaybackState>(_fetchNow, scopeKey: _scope.zoneKey);
   late final _noise = Watchable<int>(_fetchNoise, scopeKey: _scope.zoneKey);
@@ -112,6 +127,23 @@ class ApiPlaybackRepo implements PlaybackRepo {
   Future<void> resume() async {
     await _client.post('/zones/${_scope.requireZone()}/resume');
     await _now.refresh();
+  }
+
+  @override
+  Future<String?> setThisDevicePlays(bool play) async {
+    final body = await _client.post(
+      '/zones/${_scope.requireZone()}/player',
+      keyed: false,
+      body: {
+        'installation_id': await InstallationId.get(),
+        'play': play,
+      },
+    );
+    // Refresh rather than assume: now-playing carries the holder, and the
+    // engine gates on it, so the room must not start or stop on this device's
+    // own optimism about a claim that may have lost a race.
+    await _now.refresh();
+    return (body as Map<String, dynamic>?)?['player_installation_id'] as String?;
   }
 
   @override
@@ -255,7 +287,10 @@ class ApiPlaybackRepo implements PlaybackRepo {
       final payload = jsonDecode(line.substring(6)) as Map<String, dynamic>;
 
       if (payload['now'] case final Map now) {
-        _now.emit(_playbackFrom(now.cast<String, dynamic>()));
+        _now.emit(_playbackFrom(
+          now.cast<String, dynamic>(),
+          InstallationId.cached,
+        ));
       }
       if (payload['noise'] case final int noise) {
         _noise.emit(noise);
@@ -316,12 +351,57 @@ class ApiPlaybackRepo implements PlaybackRepo {
     });
   }
 
+  @override
+  Future<List<ZoneActivityEntry>> activityFor(String zoneId) async {
+    final json = await _client.get('/zones/$zoneId/activity')
+        as Map<String, dynamic>;
+    return [
+      for (final raw in (json['entries'] as List? ?? const []))
+        _activityFrom((raw as Map).cast<String, dynamic>()),
+    ];
+  }
+
+  static ZoneActivityEntry _activityFrom(Map<String, dynamic> json) =>
+      ZoneActivityEntry(
+        id: json['id'] as String? ?? '',
+        // Defaulted to now rather than thrown on: a log entry with an
+        // unreadable timestamp is still a thing that happened, and losing the
+        // whole panel to one bad row is the wrong trade.
+        at: DateTime.tryParse(json['at'] as String? ?? '')?.toLocal() ??
+            DateTime.now(),
+        line: json['line'] as String? ?? '',
+        actorName: json['actor_name'] as String?,
+        byPrism: json['by_prism'] as bool? ?? false,
+        moodId: json['mood_id'] as String?,
+      );
+
   // --- Fetching / mapping ----------------------------------------------------
 
   Future<PlaybackState> _fetchNow() async {
-    final json = await _client.get('/zones/${_scope.requireZone()}/now')
-        as Map<String, dynamic>;
-    return _playbackFrom(json);
+    final zoneId = _scope.requireZone();
+    // Awaited here rather than compared in the widget tree: the engine needs a
+    // synchronous answer to "am I the player?", and this is the one place that
+    // can afford to wait for local storage.
+    final installation = await InstallationId.get();
+    try {
+      final json =
+          await _client.get('/zones/$zoneId/now') as Map<String, dynamic>;
+      final state = _playbackFrom(json, installation);
+      // Remembered on every successful read, not on a timer: this is the
+      // freshest the device will ever be, and the mood it has to come back to
+      // after a power cut is whatever was playing when the lights went out.
+      unawaited(_offline?.rememberState(zoneId, state));
+      return state;
+    } on ApiException catch (e) {
+      // Finding #7. Only when nothing reached the server — a 403, a 404 or a
+      // 500 are answers, and answering them with a cached room would hide a
+      // real fault behind music that sounds correct.
+      if (e.statusCode != 0) rethrow;
+      final local =
+          (await _offline?.read(zoneId))?.stateAt(DateTime.now(), installation);
+      if (local == null) rethrow;
+      return local;
+    }
   }
 
   Future<int> _fetchNoise() async {
@@ -339,7 +419,10 @@ class ApiPlaybackRepo implements PlaybackRepo {
     return state;
   }
 
-  static PlaybackState _playbackFrom(Map<String, dynamic> json) => PlaybackState(
+  static PlaybackState _playbackFrom(
+    Map<String, dynamic> json,
+    String? thisInstallation,
+  ) => PlaybackState(
         // moodById() throws on an unknown id, so a missing mood must resolve to
         // a real one rather than reaching the widget tree.
         moodId: (json['mood_id'] as String?) ?? 'daytime-flow',
@@ -350,6 +433,14 @@ class ApiPlaybackRepo implements PlaybackRepo {
         // showing a Back to Auto control for a room that is already on auto is
         // worse than not showing it at all.
         offSchedule: json['off_schedule'] as bool? ?? false,
+        playerInstallationId: json['player_installation_id'] as String?,
+        // Finding #2. False when nobody holds the room AND when somebody else
+        // does — both mean this device must stay quiet.
+        playsHere: json['player_installation_id'] != null &&
+            json['player_installation_id'] == thisInstallation,
+        closed: json['closed'] as bool? ?? false,
+        opensLabel: json['opens_label'] as String?,
+        quietCapPct: json['quiet_cap_pct'] as int?,
       );
 
   static TakeoverState _takeoverFrom(Map<String, dynamic> json) {

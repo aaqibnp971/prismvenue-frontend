@@ -15,6 +15,7 @@ import '../../theme/palette.dart';
 import '../../theme/typography.dart';
 import 'daypart_sheet.dart';
 import 'follow_every_week_dialog.dart';
+import 'starter_templates.dart';
 import 'week_grid.dart';
 import 'week_picker.dart';
 
@@ -163,9 +164,18 @@ class _SelfDriveCard extends StatelessWidget {
                     color: palette.textPrimary)),
             const SizedBox(height: 8),
             Text(
-              'Prism reads the room — crowd, time of day, noise — and picks '
-              'the vibe on its own. Switch to a custom plan to pin moods to '
-              'dayparts.',
+              // Finding #12. This said Prism "reads the room — crowd, time
+              // of day, noise — and picks the vibe on its own". Nothing reads
+              // a room: there is no venues context profile (CLAUDE.md, Known
+              // gaps), and a self-driving zone is skipped by the scheduler, so
+              // it simply holds one mood. The old copy was the reason an owner
+              // would choose the option that silently stops their plan.
+              //
+              // The toggle is already locked; this is the other half — saying
+              // what it does today rather than what it is meant to do one day.
+              'Coming soon: Prism choosing the vibe for itself. Until then a '
+              'self-driving room holds a single mood and does not follow your '
+              'weekly plan — use a custom plan to plan the day.',
               textAlign: TextAlign.center,
               style: PrismType.meta
                   .copyWith(fontSize: 11.5, color: palette.textSecondary),
@@ -285,7 +295,15 @@ class _WeekPlan extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 12),
-        Expanded(child: WeekGrid(weekStart: weekStart, plan: plan)),
+        Expanded(
+          // Finding #11: an empty grid is where a new venue starts, and it
+          // gave no help at all. A starter plan is one tap to a week that is
+          // roughly right, which is a far better thing to edit than nothing.
+          // The moment there is a plan, the grid is what the manager wants.
+          child: plan.isEmpty
+              ? StarterTemplatePicker(weekStart: weekStart)
+              : WeekGrid(weekStart: weekStart, plan: plan),
+        ),
       ],
     );
   }
