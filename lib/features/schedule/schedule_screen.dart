@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/session.dart';
 import '../../app/venue_header.dart';
 import '../../data/models/schedule_entry.dart';
+import '../../data/repositories/mood_repo.dart';
 import '../../data/repositories/schedule_repo.dart';
 import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/prism_icons.dart';
@@ -225,6 +226,11 @@ class _WeekPlan extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final palette = Theme.of(context).extension<PrismPalette>()!;
+    // Kept alive here, not read: the daypart sheet reads the room's mood set at
+    // the moment it opens, and an `autoDispose` provider nobody is watching
+    // would hand it a list that has not loaded. It also rebuilds the grid when
+    // a mood drawn as unknown becomes known.
+    final offered = ref.watch(zoneMoodsProvider);
     // Keyed by the week on screen. Before this the provider took no week, so
     // the arrows moved the header label and nothing else — every week rendered
     // the same dayparts, and "+ Add" added to the recurring plan regardless.
@@ -300,7 +306,7 @@ class _WeekPlan extends ConsumerWidget {
           // gave no help at all. A starter plan is one tap to a week that is
           // roughly right, which is a far better thing to edit than nothing.
           // The moment there is a plan, the grid is what the manager wants.
-          child: plan.isEmpty
+          child: plan.isEmpty && starterTemplatesFit(offered)
               ? StarterTemplatePicker(weekStart: weekStart)
               : WeekGrid(weekStart: weekStart, plan: plan),
         ),

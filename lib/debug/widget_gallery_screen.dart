@@ -150,8 +150,8 @@ class WidgetGalleryScreen extends StatelessWidget {
                     if (col > 0) const SizedBox(width: 12),
                     Expanded(
                       child: MoodTile(
-                        mood: moods[row * 3 + col],
-                        meta: '${moods[row * 3 + col].bpm} BPM',
+                        mood: builtInMoods[row * 3 + col],
+                        meta: builtInMoods[row * 3 + col].tempoLabel,
                       ),
                     ),
                   ],
@@ -166,7 +166,9 @@ class WidgetGalleryScreen extends StatelessWidget {
         return Row(
           children: [
             for (var e = 1; e <= 5; e++) ...[
-              EnergyBars(energy: e, color: moods[e - 1].dot(palette.brightness)),
+              EnergyBars(
+                  energy: e,
+                  color: builtInMoods[e - 1].dot(palette.brightness)),
               const SizedBox(width: 14),
             ],
             const SizedBox(width: 16),

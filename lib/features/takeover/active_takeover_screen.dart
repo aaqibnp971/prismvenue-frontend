@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../data/repositories/mood_repo.dart';
 import '../../app/session.dart';
 import '../../app/venue_header.dart';
 import '../../data/models/takeover_state.dart';
@@ -50,6 +51,9 @@ class ActiveTakeoverScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Rebuilds this screen when a mood it drew as unknown becomes known. The
+    // value is not used here: moods are read through `moodById`.
+    ref.watch(moodCatalogProvider);
     final user = ref.watch(sessionProvider);
     final header = ref.watch(venueHeaderProvider);
     final takeover = ref.watch(takeoverStateProvider).value;

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/api/api_mood_repo.dart';
 import '../data/api/providers.dart';
 import '../data/models/session_context.dart';
 import '../data/models/user.dart';
@@ -188,6 +189,9 @@ class AuthController {
     // shared venue iPad that is no more the next person's business than the
     // room they were operating, so it goes out with the same broom.
     await _ref.read(offlinePlanCacheProvider).clear();
+    // And the stored mood catalogue, for the same reason: it is one
+    // organisation's, and the next person may belong to another.
+    await ApiMoodRepo.clearStored();
     await _ref.read(authRepoProvider).signOut();
   }
 

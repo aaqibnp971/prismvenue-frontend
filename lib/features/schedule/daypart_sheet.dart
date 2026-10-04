@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api/api_exception.dart';
 import '../../data/models/schedule_entry.dart';
+import '../../data/repositories/mood_repo.dart';
 import '../../data/repositories/schedule_repo.dart';
 import '../../shared/widgets/day_chips.dart';
 import '../../shared/widgets/prism_bottom_sheet.dart';
@@ -41,10 +42,31 @@ Future<void> showDaypartSheet(
   int? dayIndex,
   int? startMinutes,
 }) async {
+  // What this room can be scheduled to play: its own mood set. A mood from
+  // another set is not offered, and the database would refuse it (migration
+  // 023). When editing, the daypart's current mood is always among the
+  // choices even if the list has not loaded, so opening a block can never
+  // silently change what it plays.
+  final offered = [...ref.read(zoneMoodsProvider)];
+  if (existing != null && !offered.any((m) => m.id == existing.moodId)) {
+    offered.insert(0, moodById(existing.moodId));
+  }
+  if (offered.isEmpty) {
+    showPrismError(
+      context,
+      const ApiException(
+        statusCode: 0,
+        code: 'moods_not_loaded',
+        message: "This room's moods haven't loaded yet. Try again in a moment.",
+      ),
+    );
+    return;
+  }
   final result = await showPrismSheet<_DaypartResult>(
     context,
     topBarHeight: PrismTopBar.height,
     sheet: _DaypartSheet(
+      moods: offered,
       existing: existing,
       canChooseScope: weekStart != null && !alreadyForked,
       forkedWeek: alreadyForked,
@@ -300,12 +322,16 @@ class _Delete extends _DaypartResult {
 
 class _DaypartSheet extends StatefulWidget {
   const _DaypartSheet({
+    required this.moods,
     this.existing,
     this.canChooseScope = false,
     this.forkedWeek = false,
     this.initialDay,
     this.initialStart,
   });
+
+  /// The moods this room can be scheduled to play. Never empty.
+  final List<Mood> moods;
 
   final Daypart? existing;
 
@@ -344,7 +370,7 @@ class _DaypartSheetState extends State<_DaypartSheet> {
   /// taps (choose it, then unpick the guess), which is a tax on the common
   /// case to pay for the rarer one.
   var _daysTouched = false;
-  late String _moodId = widget.existing?.moodId ?? moods.first.id;
+  late String _moodId = widget.existing?.moodId ?? widget.moods.first.id;
 
   // `open_questions.md` #18 flagged that no time picker was designed and the
   // field was free text. It reuses the S05-12 dial the open-hours flow already
@@ -524,8 +550,9 @@ class _DaypartSheetState extends State<_DaypartSheet> {
         Text('Mood',
             style: PrismType.label.copyWith(color: palette.textSecondary)),
         const SizedBox(height: 7),
-        // Mood picker grid — 6 small tiles.
-        for (var row = 0; row < 2; row++) ...[
+        // Mood picker grid — three across, as many rows as the room's set
+        // needs (two for the six built-in moods).
+        for (var row = 0; row < (widget.moods.length + 2) ~/ 3; row++) ...[
           if (row > 0) const SizedBox(height: 8),
           Row(
             children: [
@@ -533,7 +560,11 @@ class _DaypartSheetState extends State<_DaypartSheet> {
                 if (col > 0) const SizedBox(width: 8),
                 Expanded(
                   child: Builder(builder: (context) {
-                    final mood = moods[row * 3 + col];
+                    final i = row * 3 + col;
+                    // A short last row: an empty cell keeps the others the
+                    // same width as every row above.
+                    if (i >= widget.moods.length) return const SizedBox();
+                    final mood = widget.moods[i];
                     final selected = mood.id == _moodId;
                     return GestureDetector(
                       onTap: () => setState(() => _moodId = mood.id),

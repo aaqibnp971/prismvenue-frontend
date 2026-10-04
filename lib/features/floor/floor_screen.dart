@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/roles.dart';
 import '../../app/session.dart';
 import '../../app/venue_header.dart';
+import '../../data/repositories/mood_repo.dart';
 import '../../data/repositories/playback_repo.dart';
 import '../../data/repositories/schedule_repo.dart';
 import '../../data/repositories/weather_repo.dart';
@@ -19,6 +20,7 @@ import 'widgets/confirm_auto_dialog.dart';
 import 'widgets/confirm_vibe_dialog.dart';
 import 'widgets/hero_card.dart';
 import 'widgets/mood_grid.dart';
+import 'widgets/no_audio_note.dart';
 import 'widgets/no_schedule_dialog.dart';
 
 /// S01 Floor — THE floor-staff home (all roles). Body = row: main column
@@ -32,6 +34,9 @@ class FloorScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Rebuilds this screen when a mood it drew as unknown becomes known. The
+    // value is not used here: moods are read through `moodById`.
+    ref.watch(moodCatalogProvider);
     final user = ref.watch(sessionProvider);
     final playback = ref.watch(nowPlayingProvider);
     // `noiseProvider` (reported_noise_pct) is deliberately NOT watched: nothing
@@ -208,8 +213,13 @@ class FloorScreen extends ConsumerWidget {
                             ? 'Hand back'
                             : 'Take over',
                       ),
+                      // The alert half of "silence plus an alert": says why
+                      // the room is quiet when its mood cannot be played here.
+                      const NoAudioNote(),
                       const SizedBox(height: 20),
                       MoodGrid(
+                        // The room's own set — never a compiled list.
+                        moods: ref.watch(zoneMoodsProvider),
                         currentMoodId: state.moodId,
                         paused: state.paused,
                         // Inert while staff hold the room. Prism is producing

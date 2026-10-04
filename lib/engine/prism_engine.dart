@@ -18,6 +18,7 @@ library;
 
 import 'prism_engine_stub.dart'
     if (dart.library.ffi) 'prism_engine_native.dart' as impl;
+import '../theme/moods.dart';
 import 'weather_influence.dart';
 
 /// How the engine reports itself to the UI, so "no sound" is never a mystery.
@@ -39,6 +40,16 @@ enum EngineStatus {
 
   /// Something went wrong; see [PrismEngine.lastError].
   failed,
+
+  /// The room is meant to be on a mood this device cannot play — it is not in
+  /// any catalogue the app has, or its audio is not installed here. Silent ON
+  /// PURPOSE: the engine never plays a different mood in its place, and never
+  /// goes on playing the previous one as if nothing had been asked. See
+  /// [PrismEngine.lastError] for which mood and why.
+  ///
+  /// Distinct from [failed] because it is not a fault in the engine and
+  /// retrying will not help; the fix is to install the audio.
+  unavailable,
 }
 
 abstract class PrismEngine {
@@ -48,8 +59,8 @@ abstract class PrismEngine {
 
   EngineStatus get status;
 
-  /// Human-readable reason [status] is [EngineStatus.failed] or
-  /// [EngineStatus.unsupported]. Null otherwise.
+  /// Human-readable reason [status] is [EngineStatus.failed],
+  /// [EngineStatus.unavailable] or [EngineStatus.unsupported]. Null otherwise.
   String? get lastError;
 
   /// Notifies on any [status] change so the UI can surface it.
@@ -61,10 +72,18 @@ abstract class PrismEngine {
   /// failures land in [status]/[lastError] rather than breaking the app.
   Future<void> start();
 
-  /// Plays [moodId] — one of the six ids in `theme/moods.dart`.
+  /// Plays [mood]: its scene, pinned to its PSV preset, with its low-pass
+  /// floor if it has one.
   ///
-  /// Unknown ids are ignored rather than defaulting, because a silent default
-  /// means a room quietly playing the wrong thing.
+  /// Takes the whole [Mood] rather than an id because the engine no longer
+  /// has a table to look an id up in — which scene, which preset and which
+  /// floor are all on the row the server sent.
+  ///
+  /// **Fails closed.** A mood that is unknown, or whose scene is not installed
+  /// on this device, or whose audio will not load, silences the room and sets
+  /// [EngineStatus.unavailable]. It is never replaced by another mood, and the
+  /// previous one does not go on playing: either would be a room quietly
+  /// doing something nobody asked for, under a dashboard that says otherwise.
   ///
   /// [transition] is how long the room takes to ease from the current vibe to
   /// this one — `Guardrails.transitionDuration`, i.e. the Seamless / Gentle /
@@ -76,7 +95,7 @@ abstract class PrismEngine {
   /// implementers), and the value actually used would then come from whichever
   /// class happened to run — a divergence nothing would catch. Null means "the
   /// engine's own default", resolved in one place.
-  Future<void> setMood(String moodId, {Duration? transition, bool? alignToBar});
+  Future<void> setMood(Mood mood, {Duration? transition, bool? alignToBar});
 
   /// Folds an environmental signal into the pinned mood.
   ///

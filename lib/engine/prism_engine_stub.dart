@@ -13,6 +13,7 @@ library;
 
 import 'dart:async';
 
+import '../theme/moods.dart';
 import 'prism_engine.dart';
 import 'weather_influence.dart';
 
@@ -34,7 +35,7 @@ class PlatformPrismEngine implements PrismEngine {
   Future<void> start() async {}
 
   @override
-  Future<void> setMood(String moodId, {Duration? transition, bool? alignToBar}) async {}
+  Future<void> setMood(Mood mood, {Duration? transition, bool? alignToBar}) async {}
 
   @override
   Future<void> applyInfluence(PsvNudge nudge) async {}

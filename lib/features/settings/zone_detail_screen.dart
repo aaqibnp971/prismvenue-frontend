@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/repositories/mood_repo.dart';
 import '../../app/roles.dart';
 import '../../app/session.dart';
 import '../../app/venue_header.dart';
@@ -72,6 +73,8 @@ class _ZoneDetailScreenState extends ConsumerState<ZoneDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuilds this screen when a mood it drew as unknown becomes known.
+    ref.watch(moodCatalogProvider);
     final user = ref.watch(sessionProvider);
     if (user == null) return const SizedBox.shrink(); // router redirects
     final palette = Theme.of(context).extension<PrismPalette>()!;

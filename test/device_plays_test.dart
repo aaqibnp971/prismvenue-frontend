@@ -9,6 +9,7 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prism_venues/theme/moods.dart';
 import 'package:prism_venues/app/session.dart';
 import 'package:prism_venues/data/models/playback_state.dart';
 import 'package:prism_venues/data/repositories/playback_repo.dart';
@@ -125,9 +126,9 @@ class _FakeEngine implements PrismEngine {
   Future<void> start() async {}
 
   @override
-  Future<void> setMood(String moodId,
+  Future<void> setMood(Mood mood,
       {Duration? transition, bool? alignToBar}) async {
-    moods.add(moodId);
+    moods.add(mood.id);
   }
 
   @override

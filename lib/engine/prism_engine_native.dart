@@ -46,21 +46,12 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 import 'package:prism_core_bindings/prism_core_bindings.dart';
 
+import '../theme/moods.dart';
 import 'prism_engine.dart';
 import 'weather_influence.dart';
 
 /// Where the bundled scenes live in the asset tree.
 const _assetDir = 'assets/audio';
-
-/// Manifest per mood id. Ids match `theme/moods.dart` and the backend.
-const _manifests = <String, String>{
-  'morning-calm': 'mood_morning_calm.json',
-  'daytime-flow': 'mood_daytime_flow.json',
-  'afternoon-lift': 'mood_afternoon_lift.json',
-  'evening-warmth': 'mood_evening_warmth.json',
-  'peak': 'mood_peak.json',
-  'wind-down': 'mood_wind_down.json',
-};
 
 class PlatformPrismEngine implements PrismEngine {
   PrismCore? _core;
@@ -75,6 +66,11 @@ class PlatformPrismEngine implements PrismEngine {
   String? _desiredMood;
 
   bool _silenced = false;
+
+  /// The room is meant to be on a mood this device cannot play, and is silent
+  /// because of it. Cleared by the next mood that does load. While set, the
+  /// device stays stopped whatever [resume] is told — see [_failClosed].
+  String? _unavailableReason;
 
   /// The environmental adjustment folded into every pin. Neutral until the host
   /// has a weather reading, and neutral again the moment it loses one — so a
@@ -143,7 +139,8 @@ class PlatformPrismEngine implements PrismEngine {
       });
 
   @override
-  Future<void> setMood(String moodId, {Duration? transition, bool? alignToBar}) {
+  Future<void> setMood(Mood mood, {Duration? transition, bool? alignToBar}) {
+    final moodId = mood.id;
     // Recorded OUTSIDE the queue, so it is already true when a later tap is queued
     // behind an earlier one. Everything below treats it as the single answer to
     // "what should the room be playing?".
@@ -154,29 +151,59 @@ class PlatformPrismEngine implements PrismEngine {
         // dashboard has already moved past.
         if (_desiredMood != moodId) return;
 
-        final manifest = _manifests[moodId];
-        if (manifest == null) {
-          debugPrint('prism engine: unknown mood "$moodId" ignored');
+        // No catalogue has this mood. It used to be ignored, which left the
+        // room on whatever it was playing before — the wrong thing, quietly.
+        if (!mood.known) {
+          _failClosed('This room is set to a mood ("$moodId") this device '
+              'does not have. Nothing is playing.');
           return;
         }
         if (moodId == _currentMood && _core != null) return;
 
-        final mood = VenueMood.byId(moodId);
-        if (mood == null) {
-          debugPrint('prism engine: no preset for "$moodId" ignored');
-          return;
-        }
-
         final sceneDir = _sceneDir;
         if (sceneDir == null) return; // start() not called, or it failed
 
-        final scenePath = '${sceneDir.path}/$manifest';
-        final core = _core;
+        final scenePath = scenePathFor(sceneDir.path, mood.sceneManifest);
+        if (scenePath == null || !File(scenePath).existsSync()) {
+          _failClosed('The audio for ${mood.name} is not installed on this '
+              'device. Nothing is playing.');
+          return;
+        }
 
+        final preset = presetFor(mood);
+
+        // Anything that goes wrong loading this mood's audio — a stem the
+        // manifest names and the device does not have, a file that will not
+        // decode — ends the same way as a missing manifest: silence, and a
+        // reason. Without this the failure surfaced as a status while the
+        // PREVIOUS mood went on playing, which is a substitution in all but
+        // name.
+        try {
+          await _switchTo(_core, scenePath, preset, moodId,
+              transition: transition, alignToBar: alignToBar);
+        } catch (e) {
+          debugPrint('prism engine: setMood($moodId) failed: $e');
+          _failClosed('The audio for ${mood.name} could not be loaded on this '
+              'device. Nothing is playing.');
+        }
+      });
+  }
+
+  /// Puts the room on [scenePath] pinned to [mood]: builds the first handle of
+  /// a session, or crossfades from the scene already playing.
+  Future<void> _switchTo(
+    PrismCore? core,
+    String scenePath,
+    VenueMood mood,
+    String moodId, {
+    Duration? transition,
+    bool? alignToBar,
+  }) async {
         // The first mood of a session has nothing to fade from, so it builds the
         // handle. Every mood after it crossfades in place.
         if (core == null) {
           _buildCore(scenePath, mood, moodId);
+          _unavailableReason = null;
           return;
         }
 
@@ -207,11 +234,31 @@ class PlatformPrismEngine implements PrismEngine {
         );
         _pin(core, mood);
         _currentMood = moodId;
-        if (!_silenced) {
+        _unavailableReason = null;
+        if (_silenced) {
+          // Coming back from [EngineStatus.unavailable] while paused or taken
+          // over: the room is silent for the ordinary reason again.
+          _setStatus(EngineStatus.silenced);
+        } else {
           _deviceStart(core);
           _setStatus(EngineStatus.playing);
         }
-      });
+  }
+
+  /// Silences the room because what it should be playing cannot be played
+  /// here, and says why.
+  ///
+  /// The device stops and stays stopped. [_currentMood] is cleared, so
+  /// [resume] has nothing to resume and a later request for the same mood is
+  /// tried again from scratch rather than skipped as "already playing".
+  void _failClosed(String reason) {
+    _unavailableReason = reason;
+    _currentMood = null;
+    _currentPreset = null;
+    final core = _core;
+    if (core != null) _deviceStop(core);
+    _setStatus(EngineStatus.unavailable, reason);
+    debugPrint('prism engine: silent on purpose — $reason');
   }
 
   /// Builds the first handle of a session around [scenePath]. Only reached when
@@ -252,13 +299,9 @@ class PlatformPrismEngine implements PrismEngine {
   /// this is still Peak, just Peak on a wet night.
   void _pin(PrismCore core, VenueMood mood) {
     _currentPreset = mood;
-    core.setMoodOverride(_nudge.isNeutral
-        ? mood
-        : mood.adjusted(
-            arousal: _nudge.arousal,
-            cognitiveLoad: _nudge.cognitiveLoad,
-            readiness: _nudge.readiness,
-          ));
+    // setMoodOverride also hands the engine the mood's low-pass floor (ABI
+    // 0.6), which is null for all six Default moods — see [moodToPin].
+    core.setMoodOverride(moodToPin(mood, _nudge));
   }
 
   /// Prism's own output level, or null when nothing is being rendered.
@@ -366,6 +409,13 @@ class PlatformPrismEngine implements PrismEngine {
   @override
   Future<void> resume() => _serialise('resume', () async {
         _silenced = false;
+        // Still nothing playable. Pausing and resuming must not turn "this
+        // room has no audio for its mood" into an ordinary-looking silence.
+        final reason = _unavailableReason;
+        if (reason != null) {
+          _setStatus(EngineStatus.unavailable, reason);
+          return;
+        }
         final core = _core;
         if (core == null || _currentMood == null) return;
         _deviceStart(core);
@@ -413,3 +463,60 @@ class PlatformPrismEngine implements PrismEngine {
     return dir;
   }
 }
+
+/// Where [manifest] lives under [sceneDir], or null if it is not a plain
+/// relative file name.
+///
+/// The name comes from the server. It may name a file inside the extracted
+/// audio directory and nothing else: not an absolute path, not a drive, not a
+/// way out through `..`. Refused names are treated exactly like a missing
+/// file — the room fails closed.
+@visibleForTesting
+String? scenePathFor(String sceneDir, String manifest) {
+  if (manifest.isEmpty ||
+      manifest.contains('..') ||
+      manifest.startsWith('/') ||
+      manifest.contains(r'\') ||
+      manifest.contains(':')) {
+    return null;
+  }
+  return '$sceneDir/$manifest';
+}
+
+/// The engine preset for [mood]: its PSV, its mode hint and its low-pass floor.
+///
+/// Built from the row, not looked up by id — the bindings' own table knows
+/// only the six built-in moods. For those six this produces exactly the values
+/// `VenueMood.byId` holds (`test/built_in_moods_test.dart`), which is what
+/// keeps every existing venue sounding as it did: same vector in, same samples
+/// out. A null floor stays null.
+@visibleForTesting
+VenueMood presetFor(Mood mood) => VenueMood.fromData(
+      id: mood.id,
+      modeHint: mood.modeHint,
+      arousal: mood.arousal,
+      valence: mood.valence,
+      cognitiveLoad: mood.cognitiveLoad,
+      readiness: mood.readiness,
+      lowpassFloorHz: mood.lowpassFloorHz,
+    );
+
+/// The vector the engine is actually handed for [mood] under [nudge].
+///
+/// A top-level function rather than a private method so it can be tested
+/// without a native library: this is the last Dart value before the FFI boundary, and two
+/// things about it are promises rather than details.
+///
+///   * A neutral nudge returns [mood] itself, not a copy — pinning a preset
+///     plus [PsvNudge.none] is bit-identical to pinning the preset alone.
+///   * The mood's `lowpassFloorHz` is never invented or dropped here. It is
+///     null for every Default mood, and the engine's guarantee that those
+///     moods sound exactly as before rests on that null reaching it.
+@visibleForTesting
+VenueMood moodToPin(VenueMood mood, PsvNudge nudge) => nudge.isNeutral
+    ? mood
+    : mood.adjusted(
+        arousal: nudge.arousal,
+        cognitiveLoad: nudge.cognitiveLoad,
+        readiness: nudge.readiness,
+      );

@@ -180,6 +180,19 @@ Options: Supabase Realtime direct from the client (bypasses FastAPI, needs clien
 
 `lib/theme/moods.dart:135` — `moods.firstWhere((m) => m.id == id)` with no `orElse`. An unrecognised `mood_id` from the server throws `StateError` **during widget build**, i.e. a red screen, not a fallback. The docs say "will not render"; it's worse than that. I'd harden this to fall back to a known mood while integrating.
 
+> **Resolved 2026-10-02, and not by falling back to a known mood.** Moods are
+> data now (migration 022, `GET /moods`, `GET /zones/{id}/moods` — both
+> additions to the contract). `moodById` returns `Mood.unknown(id)` for an id no
+> catalogue has: a neutral grey tile carrying the raw id, with `known == false`.
+> Substituting a real mood was the wrong hardening — it would draw, and play,
+> something the room is not on. The engine instead **fails closed** on an
+> unknown mood or one whose audio is not installed
+> (`EngineStatus.unavailable`: silence, and `NoAudioNote` on the Floor says
+> why). The six compiled moods remain as `builtInMoods`, the starting contents
+> of `MoodCatalog`, so every existing venue is unchanged with or without a
+> network. Deviation recorded here, in `api-contract.md` § Moods, in
+> `routers/moods.ts` / `routers/moods.py`, and in migration 022.
+
 ---
 
 ## 5. Contradictions and ambiguities — explicit list

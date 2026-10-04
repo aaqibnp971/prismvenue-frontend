@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/repositories/mood_repo.dart';
 import '../../../data/models/zone.dart';
 import '../../../data/models/zone_activity.dart';
 import '../../../data/repositories/playback_repo.dart';
@@ -30,6 +31,9 @@ class RecentActivity extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Rebuilds this screen when a mood it drew as unknown becomes known. The
+    // value is not used here: moods are read through `moodById`.
+    ref.watch(moodCatalogProvider);
     final palette = Theme.of(context).extension<PrismPalette>()!;
     final entries = ref.watch(zoneActivityProvider(zoneId));
 

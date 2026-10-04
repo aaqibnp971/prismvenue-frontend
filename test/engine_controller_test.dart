@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prism_venues/data/repositories/mood_repo.dart';
+import 'package:prism_venues/theme/moods.dart';
 import 'package:prism_venues/app/session.dart';
 import 'package:prism_venues/data/models/guardrails.dart';
 import 'package:prism_venues/data/repositories/playback_repo.dart';
@@ -27,10 +29,12 @@ void main() {
 
   late _FakeEngine engine;
 
-  ProviderContainer build() {
+  ProviderContainer build({MoodRepo? moods}) {
     engine = _FakeEngine();
+    MoodCatalog.instance.reset();
     final container = ProviderContainer(overrides: [
       prismEngineProvider.overrideWithValue(engine),
+      if (moods != null) moodRepoProvider.overrideWithValue(moods),
     ]);
     addTearDown(container.dispose);
     // Reading it is what attaches the listeners; main.dart watches it for the
@@ -48,6 +52,8 @@ void main() {
       container.listen(p, (_, _) {}, fireImmediately: true);
     }
     container.listen(guardrailsProvider, (_, _) {}, fireImmediately: true);
+    // The catalogue too: every screen that draws a mood watches it.
+    container.listen(moodCatalogProvider, (_, _) {}, fireImmediately: true);
     container.listen(externalAudioProvider, (_, _) {}, fireImmediately: true);
     return container;
   }
@@ -351,10 +357,101 @@ void main() {
 
     expect(engine.silenced, isFalse);
   });
+
+  group('moods the catalogue does not have', () {
+    const quietPremium = Mood(
+      id: 'lnl-quiet-premium',
+      name: 'Quiet Premium',
+      dotDark: Color(0xFFF5A623),
+      dotLight: Color(0xFFE08F0E),
+      gradStart: Color(0xFFF7AE33),
+      gradEnd: Color(0xFFD9820E),
+      bpm: 64,
+      energy: 2,
+      arousal: 0.35,
+      valence: 0.70,
+      cognitiveLoad: 0.50,
+      readiness: 0.50,
+      modeHint: 'venue_sustain',
+      sceneManifest: 'mood_lnl_quiet_premium.json',
+      lowpassFloorHz: 8000,
+      moodSetId: 'a-set-of-its-own',
+      isDefault: true,
+    );
+
+    test('reach the engine as unknown, never as some other mood', () async {
+      // The engine fails closed on an unknown mood. What must never happen is
+      // the controller "helping" by handing it a mood it does have.
+      final container = build();
+      await container.read(authControllerProvider).signIn('owner@x.com', 'pw');
+      await settle();
+      engine.received.clear();
+
+      await container.read(playbackRepoProvider).setMood('lnl-quiet-premium');
+      await settle();
+
+      expect(engine.received, isNotEmpty);
+      expect(engine.received.last.id, 'lnl-quiet-premium');
+      expect(engine.received.last.known, isFalse);
+      expect(engine.received.every((m) => m.id == 'lnl-quiet-premium'), isTrue);
+    });
+
+    test('are asked for again, complete, once the catalogue has them',
+        () async {
+      // Now-playing and the catalogue are separate requests and either can
+      // land first. A room whose mood arrived before its row must not stay
+      // silent for the rest of the session.
+      final catalogue = StreamController<List<Mood>>.broadcast();
+      addTearDown(catalogue.close);
+      final container = build(moods: _LateCatalogue(catalogue.stream));
+      await container.read(authControllerProvider).signIn('owner@x.com', 'pw');
+      await settle();
+
+      await container.read(playbackRepoProvider).setMood('lnl-quiet-premium');
+      await settle();
+      expect(engine.received.last.known, isFalse);
+
+      catalogue.add(const [quietPremium]);
+      await settle();
+
+      final last = engine.received.last;
+      expect(last.id, 'lnl-quiet-premium');
+      expect(last.known, isTrue);
+      expect(last.sceneManifest, 'mood_lnl_quiet_premium.json');
+      expect(last.lowpassFloorHz, 8000);
+    });
+
+    test('a built-in mood is handed over with no floor', () async {
+      final container = build();
+      await container.read(authControllerProvider).signIn('owner@x.com', 'pw');
+      await settle();
+
+      expect(engine.received, isNotEmpty);
+      for (final mood in engine.received) {
+        expect(mood.known, isTrue, reason: mood.id);
+        expect(mood.lowpassFloorHz, isNull, reason: mood.id);
+      }
+    });
+  });
+}
+
+/// A catalogue that has not answered yet, and answers when the test says so.
+class _LateCatalogue implements MoodRepo {
+  _LateCatalogue(this._catalogue);
+  final Stream<List<Mood>> _catalogue;
+
+  @override
+  Stream<List<Mood>> watchCatalogue() => _catalogue;
+
+  @override
+  Stream<List<Mood>> watchZoneMoods() => _catalogue;
 }
 
 class _FakeEngine implements PrismEngine {
   final moods = <String>[];
+
+  /// The moods as handed over — what the engine would build its preset from.
+  final received = <Mood>[];
   final volumes = <int>[];
   bool silenced = false;
   bool started = false;
@@ -363,9 +460,10 @@ class _FakeEngine implements PrismEngine {
   Future<void> start() async => started = true;
 
   @override
-  Future<void> setMood(String moodId,
+  Future<void> setMood(Mood mood,
       {Duration? transition, bool? alignToBar}) async {
-    moods.add(moodId);
+    moods.add(mood.id);
+    received.add(mood);
   }
 
   @override

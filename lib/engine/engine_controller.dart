@@ -28,6 +28,7 @@ import '../data/models/playback_state.dart';
 import '../data/models/takeover_state.dart';
 import '../data/models/user.dart';
 import '../data/models/weather.dart';
+import '../data/repositories/mood_repo.dart';
 import '../data/repositories/playback_repo.dart';
 import '../data/repositories/settings_repo.dart';
 import '../data/repositories/weather_repo.dart';
@@ -138,6 +139,18 @@ class EngineController {
   PrismEngine get _engine => _ref.read(prismEngineProvider);
 
   void _attach() {
+    // A mood can arrive before the catalogue that describes it — the two are
+    // separate requests. The engine fails closed on a mood it has no row for,
+    // so when the catalogue fills in, the room is asked for again. For a mood
+    // that is already playing this is a no-op inside the engine.
+    _subscriptions.add(
+      _ref.listen<AsyncValue<List<Mood>>>(
+        moodCatalogProvider,
+        (_, next) {
+          if (next.hasValue) _onPlayback(_ref.read(nowPlayingProvider).value);
+        },
+      ),
+    );
     // fireImmediately so a mood already playing when the app opens is picked
     // up, rather than waiting for the next change.
     _subscriptions.add(
@@ -300,7 +313,9 @@ class EngineController {
     final guardrails =
         _ref.read(guardrailsProvider).value ?? const Guardrails();
     await _engine.setMood(
-      state.moodId,
+      // Resolved here, at the moment of the change. An id no catalogue has
+      // becomes [Mood.unknown], which the engine fails closed on.
+      moodById(state.moodId),
       transition: guardrails.transitionDuration,
       alignToBar: guardrails.transitionAlignsToBar,
     );

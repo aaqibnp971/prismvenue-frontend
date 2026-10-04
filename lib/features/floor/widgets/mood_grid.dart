@@ -8,13 +8,22 @@ import '../../../theme/typography.dart';
 /// Moods block — §2 S01-1: header row mb11 ("Moods" 19 serif + "Tap to
 /// change the vibe · one tap" 11 `textSecondary`), grid 3×2, gap 12,
 /// tile h124.
+///
+/// Draws exactly the [moods] it is given — the room's own set, from
+/// `zoneMoodsProvider`. It used to read the compiled list of six directly,
+/// which is what made a venue with its own catalogue impossible: the grid
+/// would have offered it six moods it cannot play.
 class MoodGrid extends StatelessWidget {
   const MoodGrid({
     super.key,
+    required this.moods,
     required this.currentMoodId,
     required this.paused,
     this.onMoodTap,
   });
+
+  /// What this room offers, in display order.
+  final List<Mood> moods;
 
   final String currentMoodId;
   final bool paused;
@@ -63,6 +72,17 @@ class MoodGrid extends StatelessWidget {
         // grid drops to two and runs three rows instead. Derived from the
         // measured width rather than from a platform check, because a resized
         // desktop window gets just as narrow.
+        // Nothing to offer: the room's set has not loaded and nothing known
+        // matches what it is playing. Said in words, because an empty block
+        // under a "Moods" heading reads as the app having lost them.
+        if (moods.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            child: Text(
+              "This room's moods haven't loaded yet.",
+              style: PrismType.meta.copyWith(color: palette.textSecondary),
+            ),
+          ),
         LayoutBuilder(builder: (context, box) {
           final columns = box.maxWidth < 560 ? 2 : 3;
           final compact = columns < 3;
@@ -86,7 +106,9 @@ class MoodGrid extends StatelessWidget {
                           return MoodTile(
                             mood: mood,
                             state: stateFor(mood),
-                            meta: '${mood.bpm} BPM',
+                            // Null for a mood with no pulse: the tile then
+                            // has no meta line at all, never a made-up tempo.
+                            meta: mood.tempoLabel,
                             compact: compact,
                             onTap: onMoodTap == null
                                 ? null

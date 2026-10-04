@@ -81,6 +81,19 @@ List<(int, int, int, String)> _everyDay(List<(int, int, String)> day) => [
 
 /// Built rather than const because the day loops are functions. Kept in one
 /// list so the picker and any test see the same three.
+/// Whether the starter plans can be offered to a room whose moods are
+/// [offered].
+///
+/// The templates are written in the six built-in moods. A room with a
+/// catalogue of its own has none of them, and a starter plan there would be
+/// seven days of rows the database refuses (migration 023) — so the picker is
+/// simply not shown, and the manager gets the empty grid and "+ Add".
+bool starterTemplatesFit(Iterable<Mood> offered) {
+  final ids = {for (final m in offered) m.id};
+  return starterTemplates
+      .every((t) => t.blocks.every((b) => ids.contains(b.$4)));
+}
+
 final starterTemplates = <StarterTemplate>[
   StarterTemplate(
     id: 'clinic',

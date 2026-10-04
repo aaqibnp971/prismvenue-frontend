@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/repositories/mood_repo.dart';
 import '../../shared/widgets/prism_toast.dart';
 import '../floor/widgets/confirm_auto_dialog.dart';
 import '../../app/local_playback.dart';
@@ -37,6 +38,9 @@ class VenueScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Rebuilds this screen when a mood it drew as unknown becomes known. The
+    // value is not used here: moods are read through `moodById`.
+    ref.watch(moodCatalogProvider);
     final user = ref.watch(sessionProvider);
     if (user == null) return const SizedBox.shrink(); // router redirects
     final palette = Theme.of(context).extension<PrismPalette>()!;

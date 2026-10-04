@@ -10,6 +10,9 @@ import '../../../theme/palette.dart';
 /// title "Switch to Evening warmth?"; body "The room eases over ~40s.
 /// 92 BPM · energy 3/5."; Cancel / "Switch the vibe".
 /// Resolves true when confirmed.
+///
+/// A mood with no pulse has no tempo to quote, so its body reads "The room
+/// eases over ~40s. Energy 2/5." — the tempo is left out, not replaced.
 Future<bool?> showConfirmVibeDialog(BuildContext context, {required Mood mood}) {
   final palette = Theme.of(context).extension<PrismPalette>()!;
   return showPrismDialog<bool>(
@@ -28,7 +31,8 @@ Future<bool?> showConfirmVibeDialog(BuildContext context, {required Mood mood}) 
         title: 'Switch to ${mood.name}?',
         body: TextSpan(
           text: 'The room eases over ~40s. '
-              '${mood.bpm} BPM · energy ${mood.energy}/5.',
+              '${mood.tempoLabel == null ? 'Energy' : '${mood.tempoLabel} · energy'} '
+              '${mood.energy}/5.',
         ),
         confirmLabel: 'Switch the vibe',
         onCancel: () => Navigator.of(dialogContext).pop(false),

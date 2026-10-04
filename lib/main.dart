@@ -12,6 +12,7 @@ import 'app/router.dart';
 import 'app/session.dart';
 import 'data/api/api_auth_repo.dart';
 import 'data/api/api_last_seen_repo.dart';
+import 'data/api/api_mood_repo.dart';
 import 'data/api/api_playback_repo.dart';
 import 'data/api/api_schedule_repo.dart';
 import 'data/api/api_settings_repo.dart';
@@ -20,6 +21,7 @@ import 'data/api/open_meteo_weather_repo.dart';
 import 'data/api/providers.dart';
 import 'data/repositories/auth_repo.dart';
 import 'data/repositories/last_seen_repo.dart';
+import 'data/repositories/mood_repo.dart';
 import 'data/repositories/playback_repo.dart';
 import 'data/repositories/schedule_repo.dart';
 import 'data/repositories/settings_repo.dart';
@@ -74,6 +76,14 @@ ProviderContainer buildPrismContainer({
     ),
     settingsRepoProvider.overrideWith((ref) {
       final repo = ApiSettingsRepo(
+        ref.watch(apiClientProvider),
+        ref.watch(apiScopeProvider),
+      );
+      ref.onDispose(repo.dispose);
+      return repo;
+    }),
+    moodRepoProvider.overrideWith((ref) {
+      final repo = ApiMoodRepo(
         ref.watch(apiClientProvider),
         ref.watch(apiScopeProvider),
       );
@@ -193,6 +203,13 @@ class PrismVenuesApp extends ConsumerWidget {
     // On web this resolves to a no-op engine — Flutter web has no dart:ffi, so
     // a native library cannot be loaded there at all.
     ref.watch(engineControllerProvider);
+
+    // The mood catalogue, held for the life of the app for the same reason.
+    // The engine controller listens to it from inside a provider, and a
+    // listen like that does not by itself keep a stream emitting — something
+    // in the widget tree has to be watching. Screens that draw moods do, but
+    // the room must not depend on which screen happens to be open.
+    ref.watch(moodCatalogProvider);
 
     final themeMode = ref.watch(themeModeProvider);
     return MaterialApp.router(
